@@ -1,0 +1,3412 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TVSB Threads 小編模擬器</title>
+<style>
+  :root{
+    --bg:#15111d;
+    --bg2:#1d1830;
+    --panel:#272140;
+    --panel2:#302949;
+    --ink:#f3efe6;
+    --muted:#9a92b4;
+    --line:#0c0912;
+    --red:#e2362d;
+    --red2:#b02820;
+    --blue:#2f6fe0;
+    --green:#3fb36b;
+    --green2:#2d8c52;
+    --yellow:#e8b53a;
+    --purple:#8a5cd6;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+    font-family:"Trebuchet MS","Microsoft JhengHei","PingFang TC",monospace;
+    -webkit-font-smoothing:none;}
+  body{min-height:100vh;display:flex;justify-content:center;padding:16px;}
+  .wrap{width:100%;max-width:1000px;}
+
+  /* pixel panel */
+  .pix{
+    background:var(--panel);
+    border:4px solid var(--line);
+    box-shadow:6px 6px 0 var(--line);
+    image-rendering:pixelated;
+  }
+
+  header.topbar{
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    padding:12px 16px;margin-bottom:14px;
+    background:linear-gradient(90deg,var(--red2),var(--red));
+    border:4px solid var(--line);box-shadow:6px 6px 0 var(--line);
+  }
+  .logo{
+    background:#fff;color:var(--red);font-weight:900;letter-spacing:2px;
+    padding:4px 8px;border:3px solid var(--line);font-size:20px;
+  }
+  .title{font-size:17px;font-weight:900;letter-spacing:1px;text-transform:none;}
+  .subtitle{font-size:11px;color:#ffd9d6;margin-top:2px;letter-spacing:1px;}
+  .spacer{flex:1;}
+  .mutebtn{
+    background:#fff;color:var(--line);border:3px solid var(--line);
+    font-weight:900;cursor:pointer;padding:6px 8px;font-size:11px;
+  }
+  .mutebtn:active{transform:translate(2px,2px);}
+
+  /* 上排：左欄(時鐘+場景)一半、題目一半 */
+  .maincols{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;margin-bottom:14px;}
+  .leftcol,.rightcol{display:flex;flex-direction:column;gap:14px;}
+  @media(max-width:820px){
+    .maincols{grid-template-columns:1fr;}
+    /* 手機：題目先出現、場景在下 */
+    .rightcol{order:-1;}
+  }
+  /* 精簡數據面板（置頂） */
+  .hudbar{display:flex;align-items:center;gap:18px;padding:8px 16px;margin-bottom:14px;flex-wrap:wrap;}
+  .hud-item{display:flex;flex-direction:column;gap:2px;min-width:0;}
+  .hud-grow{flex:1;min-width:180px;}
+  .hud-label{font-size:10px;letter-spacing:2px;color:var(--muted);font-weight:900;}
+  .hud-val{font-size:22px;font-weight:900;color:#fff;letter-spacing:1px;}
+  .hud-val.sm{font-size:14px;}
+  .hud-val.low{color:var(--red);}
+  .hud-top{display:flex;align-items:baseline;gap:8px;margin-bottom:3px;}
+  .hud-note{font-size:9px;color:var(--muted);letter-spacing:1px;margin-left:auto;}
+  .hudbar .barout{height:14px;}
+  /* 瀕死警示（硬邊閃爍，無光暈） */
+  .hud-grow.warn .hud-val{animation:warnblink .5s steps(1) infinite;}
+  .hud-grow.warn .barout{border-color:var(--red);animation:warnblink .5s steps(1) infinite;}
+  .eventbox.danger{animation:warnborder .5s steps(1) infinite;}
+  @keyframes warnblink{0%,49%{color:#fff;border-color:#000;}50%,100%{color:var(--red);border-color:var(--red);}}
+  @keyframes warnborder{0%,49%{border-color:var(--line);}50%,100%{border-color:var(--red);}}
+
+  /* scene */
+  .scenebox{padding:10px;position:relative;}
+  .screenwrap{position:relative;line-height:0;}
+  canvas#scene{width:100%;height:auto;display:block;image-rendering:pixelated;
+    border:3px solid var(--line);background:#120f1a;}
+  /* 螢幕上的即時網友彈幕（疊在像素螢幕區域上） */
+  #threads{
+    position:absolute;left:37.5%;top:35%;width:26.25%;height:26%;
+    overflow:hidden;background:#0d1a2b;box-sizing:border-box;
+    display:flex;flex-direction:column;justify-content:flex-end;
+    padding:2px 3px;line-height:1;z-index:4;
+  }
+  #threads .cm{
+    font-size:9px;line-height:1.45;letter-spacing:0;flex:none;
+    color:#9fc7ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    animation:cmIn .18s steps(3);
+  }
+  #threads .cm .u{color:#6f8fb8;}
+  #threads .cm.g{color:#7fe3a0;}
+  #threads .cm.b{color:#ff8a80;}
+  @keyframes cmIn{from{opacity:0;}to{opacity:1;}}
+  .statewrap{margin-top:8px;display:flex;justify-content:space-between;
+    font-size:11px;color:var(--muted);letter-spacing:1px;}
+  .mood{color:var(--yellow);font-weight:900;}
+  /* 對話泡泡（像素，無光暈） */
+  #bubble{
+    position:absolute;display:none;max-width:160px;
+    background:#fff;color:var(--line);border:3px solid var(--line);
+    padding:5px 9px;font-size:13px;font-weight:900;letter-spacing:1px;
+    z-index:6;line-height:1.3;
+  }
+  #bubble::after{content:"";position:absolute;left:18px;bottom:-10px;
+    width:0;height:0;border:7px solid transparent;border-top-color:var(--line);}
+  #bubble.show{display:block;animation:pop .18s steps(3);}
+  /* 飄字層 */
+  #floatLayer{position:fixed;inset:0;pointer-events:none;z-index:60;overflow:hidden;}
+  .float{position:absolute;font-weight:900;font-size:16px;letter-spacing:1px;
+    text-shadow:2px 2px 0 var(--line);animation:floatUp 1s steps(12) forwards;}
+  .float.up{color:#6fe39a;}
+  .float.down{color:#ff6b61;}
+  @keyframes floatUp{
+    0%{transform:translate(-50%,0);opacity:0;}
+    15%{opacity:1;}
+    100%{transform:translate(-50%,-46px);opacity:0;}
+  }
+  .bump{animation:bump .32s steps(4);}
+  @keyframes bump{0%{transform:scale(1);}40%{transform:scale(1.4);}100%{transform:scale(1);}}
+
+  /* sidebar */
+  .side{display:flex;flex-direction:column;gap:14px;}
+  .card{padding:12px;}
+  .card h3{margin:0 0 8px;font-size:12px;letter-spacing:2px;color:var(--muted);
+    text-transform:uppercase;font-weight:900;}
+
+  .clock{font-size:40px;font-weight:900;letter-spacing:3px;text-align:center;
+    color:#fff;background:var(--line);border:3px solid #000;padding:6px 0;}
+  .clocksub{text-align:center;font-size:11px;color:var(--muted);margin-top:6px;letter-spacing:1px;}
+  .daybar{height:12px;background:var(--line);border:3px solid #000;margin-top:8px;}
+  /* 時鐘卡：縮小 */
+  .clockcard{padding:8px 10px;}
+  .clockcard h3{margin-bottom:5px;}
+  .clockcard .clock{font-size:22px;letter-spacing:2px;padding:2px 0;}
+  .clockcard .clocksub{font-size:10px;margin-top:4px;}
+  .clockcard .daylabel{font-size:11px;margin-top:4px;}
+  .clockcard .daybar{height:8px;margin-top:5px;}
+  .dayfill{height:100%;background:var(--blue);width:0%;}
+
+  .statrow{margin-bottom:12px;}
+  .statrow:last-child{margin-bottom:0;}
+  .statlabel{display:flex;justify-content:space-between;font-size:12px;font-weight:900;margin-bottom:5px;}
+  .statlabel .v{color:#fff;}
+  .barout{height:20px;background:var(--line);border:3px solid #000;position:relative;overflow:hidden;}
+  .barin{height:100%;background:var(--green);width:75%;transition:width .35s steps(12);}
+  .barin.low{background:var(--red);}
+  .barin.mid{background:var(--yellow);}
+  .thresh{position:absolute;top:-3px;bottom:-3px;width:3px;background:#fff;left:65%;}
+  .threshtag{font-size:10px;color:var(--muted);margin-top:4px;letter-spacing:1px;}
+
+  .fans{font-size:30px;font-weight:900;color:#fff;text-align:center;letter-spacing:1px;}
+  .fansdelta{text-align:center;font-size:11px;height:14px;letter-spacing:1px;margin-top:2px;}
+
+  .feed{font-size:11px;line-height:1.5;max-height:150px;overflow:hidden;}
+  .feed div{padding:3px 0;border-bottom:1px dashed #3a3356;color:var(--muted);}
+  .feed b.up{color:var(--green);}
+  .feed b.down{color:var(--red);}
+
+  /* event card */
+  .eventbox{padding:14px;min-height:210px;position:relative;}
+  .eventbox.reading{border-color:#4a4370;}
+  .evtop{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+  .tag{font-size:11px;font-weight:900;padding:4px 8px;border:3px solid var(--line);color:#fff;letter-spacing:1px;}
+  .tag.c爭議{background:var(--purple);}
+  .tag.c諷刺{background:var(--blue);}
+  .tag.c誤{background:var(--red);}
+  .tag.c炎上{background:#d8622a;}
+  .tag.c日常{background:var(--green2);}
+  .combo{font-size:11px;font-weight:900;letter-spacing:1px;color:transparent;}
+  .combo.on{color:#fff;background:var(--green2);border:3px solid var(--line);padding:3px 7px;animation:pop .25s steps(3);}
+  .combo.on.hot{background:#d8622a;}
+  @keyframes pop{from{transform:scale(1.35);}to{transform:scale(1);}}
+  .hardchip{font-size:11px;font-weight:900;letter-spacing:2px;color:transparent;}
+  .hardchip.on{color:#fff;background:#b02820;border:3px solid var(--line);padding:3px 7px;
+    animation:pop .25s steps(3);}
+  .eventbox.hardevt{border-color:#b02820;}
+  .evno{font-size:11px;color:var(--muted);margin-left:auto;letter-spacing:1px;}
+  .timerout{position:relative;height:16px;background:var(--line);border:3px solid #000;margin-bottom:12px;}
+  .timersec{position:absolute;right:4px;top:50%;transform:translateY(-50%);
+    font-size:10px;font-weight:900;color:#fff;letter-spacing:1px;}
+  .timerin{height:100%;background:var(--green);width:100%;}
+  .timerin.danger{background:var(--red);}
+  .timerin.reading{background:#5a5480;}
+  .evtext{font-size:15px;line-height:1.65;margin-bottom:14px;min-height:50px;font-weight:700;}
+  .choices{display:grid;gap:9px;}
+  .choice{
+    position:relative;text-align:left;background:var(--panel2);color:var(--ink);
+    border:3px solid var(--line);box-shadow:3px 3px 0 var(--line);
+    padding:10px 12px 10px 40px;font-size:13px;cursor:pointer;font-weight:700;
+    font-family:inherit;line-height:1.4;transition:background .08s;
+  }
+  .choice:hover:not(:disabled){background:#3a3159;}
+  .choice:active:not(:disabled){transform:translate(3px,3px);box-shadow:0 0 0 var(--line);}
+  .choice:disabled{cursor:default;}
+  .choice.locked{filter:grayscale(.4);}
+  .choice.flash{background:#4a3f6e;}
+  .keynum{
+    position:absolute;left:8px;top:50%;transform:translateY(-50%);
+    width:22px;height:22px;line-height:22px;text-align:center;
+    background:var(--line);color:#fff;border:2px solid #000;font-size:12px;font-weight:900;
+  }
+
+  .resultline{font-size:13px;font-weight:900;min-height:20px;margin-top:8px;}
+  .resultline .up{color:var(--green);}
+  .resultline .down{color:var(--red);}
+  .resultline .reading{color:var(--muted);}
+  .fans.low{color:var(--red);}
+
+  /* 首頁 */
+  .home{position:fixed;inset:0;z-index:55;background:
+    repeating-linear-gradient(0deg,#15111d 0,#15111d 22px,#181327 22px,#181327 44px);
+    display:flex;align-items:flex-start;justify-content:center;
+    padding:20px;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+  .homecard{max-width:720px;width:100%;background:var(--panel);padding:0;margin:0;}
+  .homehero{display:flex;align-items:center;justify-content:space-between;gap:20px;
+    flex-wrap:wrap;padding:28px 26px;background:linear-gradient(90deg,var(--red2),var(--red));
+    border-bottom:4px solid var(--line);}
+  .herotitle{text-align:left;}
+  .homelogo{display:inline-block;background:#fff;color:var(--red);font-weight:900;
+    letter-spacing:3px;font-size:18px;padding:3px 9px;border:3px solid var(--line);margin-bottom:10px;}
+  .bigtitle{margin:0;font-size:58px;line-height:1;font-weight:900;color:#fff;letter-spacing:4px;
+    text-shadow:5px 5px 0 var(--line);}
+  .herostart{text-align:center;}
+  .homestart{
+    background:#fff;color:var(--red);border:4px solid var(--line);
+    box-shadow:6px 6px 0 var(--line);font-family:inherit;font-weight:900;
+    font-size:30px;letter-spacing:6px;padding:20px 34px;cursor:pointer;
+  }
+  .homestart:hover{background:#ffe3e1;}
+  .homestart:active{transform:translate(5px,5px);box-shadow:1px 1px 0 var(--line);}
+  .herostart .statline{margin:12px 0 0;color:#ffe3e1;}
+  .homeintro{padding:22px 26px;}
+  .homeintro h3{margin:0 0 12px;font-size:14px;letter-spacing:3px;color:var(--yellow);
+    text-transform:uppercase;font-weight:900;}
+  .homeintro p{margin:0 0 14px;font-size:14px;line-height:1.75;color:var(--ink);}
+  .introlist{margin:0;padding-left:20px;}
+  .introlist li{font-size:13px;line-height:1.8;color:var(--muted);margin-bottom:6px;}
+  .introlist b{color:var(--ink);}
+  .introlist .cg{color:var(--green);font-weight:900;}
+  .introlist .cy{color:var(--yellow);font-weight:900;}
+  @media(max-width:560px){
+    .homehero{justify-content:center;text-align:center;padding:20px 16px;gap:14px;}
+    .herotitle{text-align:center;}
+    .bigtitle{font-size:40px;letter-spacing:3px;}
+    .homestart{font-size:24px;padding:16px 40px;letter-spacing:5px;}
+    .homeintro{padding:16px;}
+    .homeintro p{font-size:13px;}
+    .homeach .achgrid{grid-template-columns:1fr;}
+  }
+  /* 手機整體：加大點擊目標、縮邊距 */
+  @media(max-width:620px){
+    body{padding:10px;}
+    .wrap{max-width:100%;}
+    .title{font-size:15px;}
+    .mutebtn{padding:8px 12px;font-size:12px;}
+    .eventbox{min-height:0;padding:12px;}
+    .evtext{font-size:16px;}
+    .choice{font-size:15px;padding:14px 12px 14px 44px;}
+    .choices{gap:11px;}
+    .hudbar{gap:12px;padding:8px 12px;}
+    .hud-val{font-size:20px;}
+    .modal{padding:18px;}
+    .modal .big{font-size:42px;}
+    .startbtn{font-size:15px;padding:13px 20px;}
+    .achtoast{white-space:normal;max-width:90vw;text-align:center;font-size:12px;padding:9px 14px;}
+  }
+
+  /* overlay */
+  .overlay{position:fixed;inset:0;background:rgba(10,8,16,.92);display:flex;
+    align-items:center;justify-content:center;padding:20px;z-index:50;}
+  .modal{max-width:520px;width:100%;padding:24px;text-align:center;background:var(--panel);}
+  .modal h1{font-size:24px;margin:0 0 8px;letter-spacing:2px;}
+  .modal h1.win{color:var(--green);}
+  .modal h1.lose{color:var(--red);}
+  .modal p{font-size:14px;line-height:1.7;color:var(--ink);}
+  .modal .big{font-size:52px;line-height:1;margin:14px 0;}
+  .statline{font-size:12px;color:var(--muted);margin:10px 0 18px;letter-spacing:1px;}
+  .startbtn{
+    background:var(--red);color:#fff;border:4px solid var(--line);
+    box-shadow:5px 5px 0 var(--line);font-family:inherit;font-weight:900;
+    font-size:16px;padding:14px 26px;cursor:pointer;letter-spacing:2px;
+  }
+  .startbtn:active{transform:translate(4px,4px);box-shadow:1px 1px 0 var(--line);}
+  .rules{text-align:left;font-size:12px;line-height:1.8;color:var(--muted);
+    background:var(--bg2);border:3px solid var(--line);padding:12px;margin:16px 0;}
+  .rules b{color:var(--ink);}
+  /* 職涯 / 分數 HUD */
+  .daylabel{text-align:center;font-size:12px;font-weight:900;color:var(--yellow);
+    letter-spacing:1px;margin-top:8px;}
+  .scorebox{background:var(--bg2);border:3px solid var(--line);padding:8px;margin-bottom:12px;}
+  .score{font-size:28px;font-weight:900;color:#fff;text-align:center;letter-spacing:1px;}
+  /* 結算分享卡 */
+  .scorecard{background:var(--bg2);border:3px solid var(--line);padding:12px;margin:14px 0;}
+  .scbig{font-size:40px;font-weight:900;color:var(--yellow);line-height:1;}
+  .scbig span{font-size:16px;color:var(--muted);}
+  .scrow{font-size:12px;color:var(--ink);margin-top:8px;letter-spacing:1px;}
+  .scrow b{color:#fff;}
+  .record{color:var(--green);font-weight:900;font-size:16px;letter-spacing:2px;margin:6px 0;
+    animation:pop .3s steps(3);}
+  .sharebox{width:100%;height:58px;resize:none;background:var(--line);color:#cfe6ff;
+    border:3px solid #000;font-family:inherit;font-size:11px;padding:7px;line-height:1.4;margin:6px 0 12px;}
+  .btnrow{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
+  .startbtn.alt{background:var(--panel2);}
+  /* 成就 toast */
+  .achtoast{position:fixed;left:50%;top:18px;transform:translateX(-50%) translateY(-80px);
+    background:var(--yellow);color:var(--line);border:4px solid var(--line);box-shadow:5px 5px 0 var(--line);
+    font-weight:900;letter-spacing:2px;font-size:14px;padding:10px 20px;z-index:80;opacity:0;
+    transition:transform .25s steps(5),opacity .25s;pointer-events:none;white-space:nowrap;}
+  .achtoast.show{transform:translateX(-50%) translateY(0);opacity:1;}
+  /* 成就格 */
+  .homeach .achgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .achitem{display:flex;gap:8px;align-items:flex-start;background:var(--bg2);border:3px solid var(--line);padding:7px 9px;}
+  .achitem .acon{width:22px;height:22px;flex:none;background:var(--line);color:var(--muted);
+    text-align:center;line-height:22px;font-weight:900;border:2px solid #000;font-size:12px;}
+  .achitem.got .acon{background:var(--yellow);color:var(--line);}
+  .achitem .atext{min-width:0;}
+  .achitem .aname{font-size:12px;font-weight:900;color:var(--muted);letter-spacing:1px;}
+  .achitem.got .aname{color:var(--ink);}
+  .achitem .adesc{font-size:10px;color:var(--muted);line-height:1.4;margin-top:2px;}
+  .hidden{display:none !important;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="topbar">
+    <div class="logo">TVSB</div>
+    <div>
+      <div class="title">Threads 小編模擬器</div>
+      <div class="subtitle">1 / 2 / 3 選擇　·　ESC 暫停</div>
+    </div>
+    <div class="spacer"></div>
+    <button class="mutebtn" id="pauseBtn">暫停</button>
+    <button class="mutebtn" id="muteBtn">音效：開</button>
+  </header>
+
+  <!-- 數據面板（精簡，置頂） -->
+  <div class="pix hudbar">
+    <div class="hud-item">
+      <span class="hud-label">職涯總分</span>
+      <span class="hud-val" id="scoreV">0</span>
+    </div>
+    <div class="hud-item hud-grow" id="tolItem">
+      <div class="hud-top">
+        <span class="hud-label">社群容忍度</span>
+        <span class="hud-val sm" id="buzzV">72</span>
+        <span class="hud-note" id="threshTag">白線 = 30，掉到就被淘汰</span>
+      </div>
+      <div class="barout"><div class="barin" id="buzzBar"></div><div class="thresh" id="buzzThresh"></div></div>
+    </div>
+    <div class="hud-item">
+      <span class="hud-label">粉絲</span>
+      <span class="hud-val" id="fansV">12,000</span>
+    </div>
+  </div>
+
+  <!-- 上排：左欄(時鐘+場景)、題目右 -->
+  <div class="maincols">
+    <div class="leftcol">
+      <div class="pix card clockcard">
+        <h3>時鐘</h3>
+        <div class="clock" id="clock">09:00</div>
+        <div class="clocksub" id="clockSub">上班第 1 小時</div>
+        <div class="daylabel" id="dayLabel">第 1 / 5 天 · 實習小編</div>
+        <div class="daybar"><div class="dayfill" id="dayFill"></div></div>
+      </div>
+      <div class="pix scenebox">
+      <div class="screenwrap">
+        <div id="bubble"></div>
+        <canvas id="scene" width="320" height="200"></canvas>
+        <div id="threads"></div>
+      </div>
+      <div class="statewrap">
+        <span id="deskState">小編正在待命…</span>
+        <span class="mood" id="moodState">心情：普通</span>
+      </div>
+      </div>
+    </div>
+
+    <div class="rightcol">
+      <div class="pix eventbox" id="eventBox">
+        <div class="evtop">
+          <span class="tag c日常" id="evTag">日常</span>
+          <span class="hardchip" id="hardChip"></span>
+          <span class="combo" id="comboBox"></span>
+          <span class="evno" id="evNo">事件 0</span>
+        </div>
+        <div class="timerout"><div class="timerin" id="timerIn"></div><span class="timersec" id="timerSec"></span></div>
+        <div class="evtext" id="evText">按「開始」展開你的小編人生。</div>
+        <div class="choices" id="choices"></div>
+        <div class="resultline" id="resultLine"></div>
+      </div>
+
+      <div class="pix card">
+        <h3>後台動態</h3>
+        <div class="feed" id="feed"><div>（還沒開工…）</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="floatLayer"></div>
+<div id="achToast" class="achtoast"></div>
+
+<!-- 首頁 -->
+<div class="home" id="homeScreen">
+  <div class="homecard pix">
+    <div class="homehero">
+      <div class="herotitle">
+        <div class="homelogo">TVSB</div>
+        <h1 class="bigtitle">我是小編</h1>
+      </div>
+      <div class="herostart">
+        <button class="homestart" id="homeStartBtn">開始</button>
+        <div class="statline" id="bestLine"></div>
+      </div>
+    </div>
+    <div class="homeintro">
+      <h3>遊戲介紹</h3>
+      <p>你是 TVSB 新聞台的 Threads 小編。整天盯著後台，社群平台不停丟來各種狀況——該不該吼下爭議留言、文章出包要不要認、炎上了怎麼滅火。你的每個決定，都牽動<b>社群容忍度</b>與<b>粉絲</b>。</p>
+      <ul class="introlist">
+        <li><b>5 天職涯</b>：實習 → 正職 → 資深 → 小編組長 → 社群總監，一天一關、難度逐天遞增，撐過第 5 天即封神。</li>
+        <li><b>兩條命</b>：社群容忍度掉到 <b>30</b> 立刻被<b>淘汰</b>；粉絲掉到 0 也會被換掉。</li>
+        <li><b>限時決策</b>：每題先讀題、再限時倒數，<b>猶豫超時</b>會被懲罰；可用鍵盤 <b>1 / 2 / 3</b> 快速選。</li>
+        <li>選項<b>不給任何提示</b>——每個決定的風險與成功率，全靠你自己判斷與累積經驗。遇到紅標<b>魔王級</b>兩難更要小心。</li>
+        <li>每天題數遞增（20→25→30→35→40）；連勝加碼、好成績累積<b>職涯總分</b>，挑戰你的<b>最高紀錄</b>。共 <b>500</b> 種隨機事件。</li>
+      </ul>
+    </div>
+    <div class="homeintro homeach">
+      <h3>成就 <span id="achCount"></span></h3>
+      <div class="achgrid" id="achGrid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 暫停 -->
+<div class="overlay hidden" id="pauseScreen">
+  <div class="pix modal">
+    <h1>暫停中</h1>
+    <div class="big">II</div>
+    <p>深呼吸一下，小編也需要喘口氣。</p>
+    <div class="statline">按 ESC 或「繼續」回到崗位</div>
+    <div class="btnrow">
+      <button class="startbtn alt" id="homeFromPause">回首頁</button>
+      <button class="startbtn" id="resumeBtn">繼續</button>
+    </div>
+  </div>
+</div>
+
+<!-- 升職 / 結算 OVERLAY -->
+<div class="overlay hidden" id="overlay">
+  <div class="pix modal" id="modal"></div>
+</div>
+
+<script>
+/* =========================================================
+   TVSB Threads 小編模擬器  (single-file, no libs)
+   ========================================================= */
+"use strict";
+
+/* ---------- 事件資料庫（120+） ----------
+   o: 選項  {t:按鈕文字, b:聲量差, f:粉絲差, hint?:提示}
+   風險選項: {t, risk:true, p:成功機率, s:{b,f}, x:{b,f}}
+*/
+const EVENTS = [
+/* ===== 爭議留言 ===== */
+{c:"爭議",t:"有網友在死亡車禍貼文下留言「活該」，已經 300 讚。要不要處理？",o:[
+  {t:"直接刪留言＋鎖帳號",b:-3,f:400,hint:"安全，但被說言論審查"},
+  {t:"留著讓它自然發酵",risk:true,p:0.4,s:{b:9,f:1500},x:{b:-13,f:-1800},hint:"賭熱度"},
+  {t:"小編下場回嗆那位網友",risk:true,p:0.45,s:{b:12,f:2200},x:{b:-16,f:-2600}} ]},
+{c:"爭議",t:"政治新聞底下藍綠粉開戰，髒話洗版。小編怎麼辦？",o:[
+  {t:"全部隱藏＋關留言",b:-5,f:200,hint:"清淨但沒互動"},
+  {t:"置頂一句「理性討論」",b:2,f:300},
+  {t:"假裝沒看到繼續滑",risk:true,p:0.5,s:{b:6,f:800},x:{b:-10,f:-1200}} ]},
+{c:"爭議",t:"藝人離婚新聞湧入「早就知道」的酸言，其中一則超好笑。要置頂嗎？",o:[
+  {t:"置頂那則酸言",risk:true,p:0.55,s:{b:11,f:1800},x:{b:-14,f:-1500},hint:"好笑但缺德"},
+  {t:"按個小讚就好",b:1,f:150},
+  {t:"刪掉，尊重當事人",b:-4,f:500} ]},
+{c:"爭議",t:"有人在食安新聞下貼出未證實的「內部名單」，瘋傳中。",o:[
+  {t:"立刻刪，避免散布謠言",b:-2,f:300},
+  {t:"轉貼到限動衝流量",risk:true,p:0.3,s:{b:10,f:2000},x:{b:-18,f:-3000},hint:"法務會哭"},
+  {t:"回覆「資料未經查證」",b:3,f:400} ]},
+{c:"爭議",t:"宗教團體在貼文下集體留言抗議報導角度。",o:[
+  {t:"道歉並下架貼文",b:-6,f:-300},
+  {t:"補一則「多元觀點」聲明",b:2,f:200},
+  {t:"硬著頭皮不理",risk:true,p:0.5,s:{b:5,f:600},x:{b:-11,f:-900}} ]},
+{c:"爭議",t:"動保爭議新聞，兩派在留言區互相出征，有人 tag 了 TVSB 官方。",o:[
+  {t:"官方回：「已收到各界意見」",b:1,f:200},
+  {t:"選一邊按讚",risk:true,p:0.4,s:{b:8,f:1400},x:{b:-13,f:-1700}},
+  {t:"關閉留言冷處理",b:-4,f:100} ]},
+{c:"爭議",t:"有人留言爆料某立委私事，真假難辨但很勁爆。",o:[
+  {t:"截圖做成新聞",risk:true,p:0.35,s:{b:14,f:2600},x:{b:-20,f:-3200},hint:"沒查證=大雷"},
+  {t:"先私訊求證再說",b:-1,f:100},
+  {t:"當沒看到",b:-3,f:-200} ]},
+{c:"爭議",t:"災難現場照片下，有網友留言「拍這麼美是在觀光？」",o:[
+  {t:"回覆說明採訪倫理",b:3,f:500},
+  {t:"刪留言",b:-4,f:-200},
+  {t:"按讚那則嗆聲",risk:true,p:0.3,s:{b:7,f:900},x:{b:-12,f:-1400}} ]},
+{c:"爭議",t:"國際戰爭新聞下，有人留言帶風向說是假的。",o:[
+  {t:"附上多家外媒連結反駁",b:4,f:600,hint:"專業但花時間"},
+  {t:"直接嘴「請去看書」",risk:true,p:0.45,s:{b:9,f:1500},x:{b:-12,f:-1300}},
+  {t:"隱藏留言",b:-2,f:100} ]},
+{c:"爭議",t:"有網友在你貼文下開地圖砲罵所有媒體。",o:[
+  {t:"幽默回「我也很想加薪」",risk:true,p:0.6,s:{b:10,f:1600},x:{b:-9,f:-1000},hint:"自嘲圈粉"},
+  {t:"已讀不回",b:-2,f:0},
+  {t:"檢舉封鎖",b:-4,f:-300} ]},
+{c:"爭議",t:"某品牌公關私訊你，希望「協助處理」底下的負評留言。",o:[
+  {t:"婉拒，維持中立",b:3,f:300},
+  {t:"偷偷隱藏負評",risk:true,p:0.25,s:{b:6,f:800},x:{b:-19,f:-2800},hint:"被抓到=業配醜聞"},
+  {t:"截圖公開這個要求",risk:true,p:0.5,s:{b:13,f:2200},x:{b:-11,f:-900}} ]},
+{c:"爭議",t:"交通事故新聞湧入「三寶」獵巫留言，開始肉搜當事人。",o:[
+  {t:"關留言阻止肉搜",b:-3,f:200},
+  {t:"置頂「勿肉搜」提醒",b:2,f:400},
+  {t:"放著繼續衝聲量",risk:true,p:0.3,s:{b:9,f:1700},x:{b:-16,f:-2200}} ]},
+{c:"爭議",t:"有人留言質疑你們「只報壞消息」，獲得大量共鳴。",o:[
+  {t:"隔天排一則正能量新聞回應",b:4,f:700},
+  {t:"回「壞消息才是新聞」",risk:true,p:0.5,s:{b:7,f:1100},x:{b:-10,f:-1200}},
+  {t:"不回應",b:-2,f:-100} ]},
+{c:"爭議",t:"網友在疫苗新聞下激辯，有人貼出偽科學連結。",o:[
+  {t:"附衛福部資料澄清",b:3,f:500},
+  {t:"刪連結防擴散",b:-2,f:100},
+  {t:"開嘲諷模式開戰",risk:true,p:0.4,s:{b:8,f:1300},x:{b:-13,f:-1600}} ]},
+{c:"爭議",t:"有留言用你們舊報導打臉今天的新報導，一針見血。",o:[
+  {t:"大方承認並更新",b:5,f:900,hint:"誠實加分"},
+  {t:"刪留言裝沒事",risk:true,p:0.3,s:{b:4,f:500},x:{b:-15,f:-2000}},
+  {t:"硬拗兩篇角度不同",b:-5,f:-600} ]},
+{c:"爭議",t:"colorful 的仇恨性留言出現在 LGBT 新聞下。",o:[
+  {t:"隱藏並檢舉",b:3,f:500},
+  {t:"官方回應挺平權",risk:true,p:0.55,s:{b:10,f:1800},x:{b:-9,f:-1100}},
+  {t:"保持沉默",b:-3,f:-200} ]},
+{c:"爭議",t:"有人留言「這則業配吧？」其實沒有業配。",o:[
+  {t:"幽默澄清「真的沒收錢QQ」",risk:true,p:0.6,s:{b:8,f:1200},x:{b:-7,f:-700}},
+  {t:"正式聲明非業配",b:2,f:300},
+  {t:"不理",b:-2,f:-100} ]},
+{c:"爭議",t:"颱風假新聞下，有人留言「希望放假害死一堆人」被罵翻。",o:[
+  {t:"隱藏爭議留言",b:-2,f:100},
+  {t:"置頂氣象局正式資訊",b:3,f:600},
+  {t:"跟風酸那位網友",risk:true,p:0.4,s:{b:7,f:1000},x:{b:-11,f:-1300}} ]},
+{c:"爭議",t:"有網友在你貼文下炫耀「我是記者的朋友，內幕是…」",o:[
+  {t:"私訊確認消息來源",b:1,f:200},
+  {t:"直接拿來發新聞",risk:true,p:0.3,s:{b:12,f:2300},x:{b:-18,f:-2900}},
+  {t:"當八卦笑笑不理",b:-1,f:0} ]},
+{c:"爭議",t:"政論留言區出現機器人帳號洗同樣的文案。",o:[
+  {t:"公告並封鎖機器人",b:4,f:600},
+  {t:"假裝很多人支持不處理",risk:true,p:0.25,s:{b:5,f:700},x:{b:-14,f:-1800}},
+  {t:"檢舉後關留言",b:-3,f:100} ]},
+{c:"爭議",t:"有人留言貼出競爭台的獨家畫面問你「怎麼沒跟到」。",o:[
+  {t:"承認漏接，承諾追蹤",b:1,f:300},
+  {t:"酸對手畫面是假的",risk:true,p:0.3,s:{b:6,f:900},x:{b:-13,f:-1500}},
+  {t:"刪留言",b:-4,f:-200} ]},
+{c:"爭議",t:"名人在你貼文下本人現身回應，留言區暴動。",o:[
+  {t:"小編禮貌回覆＋置頂",risk:true,p:0.65,s:{b:13,f:2400},x:{b:-8,f:-800},hint:"互動爆棚"},
+  {t:"截圖做成後續新聞",b:5,f:900},
+  {t:"當作沒看到",b:-5,f:-600} ]},
+{c:"爭議",t:"留言區有人在賣可疑的「翻譯年糕」詐騙連結。",o:[
+  {t:"刪除並公告防詐",b:3,f:400},
+  {t:"懶得管",risk:true,p:0.2,s:{b:2,f:300},x:{b:-16,f:-2200}},
+  {t:"檢舉帳號",b:1,f:200} ]},
+{c:"爭議",t:"有人翻出你三年前打錯字的貼文當梗瘋傳。",o:[
+  {t:"自嘲做成迷因",risk:true,p:0.6,s:{b:11,f:1900},x:{b:-8,f:-900}},
+  {t:"悄悄刪掉舊文",risk:true,p:0.3,s:{b:3,f:400},x:{b:-12,f:-1400},hint:"被抓到更慘"},
+  {t:"假裝沒看到",b:-3,f:-200} ]},
+{c:"爭議",t:"災區募款新聞下，有人質疑善款流向。",o:[
+  {t:"補充官方徵信連結",b:4,f:600},
+  {t:"回「請自己查」",risk:true,p:0.35,s:{b:5,f:700},x:{b:-11,f:-1200}},
+  {t:"關留言",b:-3,f:-100} ]},
+{c:"爭議",t:"有網友把你的新聞配上陰謀論長文，獲得上千分享。",o:[
+  {t:"官方澄清並標註不實",b:3,f:500},
+  {t:"不回應讓它燒",risk:true,p:0.25,s:{b:4,f:900},x:{b:-17,f:-2600}},
+  {t:"檢舉該貼文",b:1,f:200} ]},
+{c:"爭議",t:"主播口誤被截圖，留言區要求你們道歉。",o:[
+  {t:"誠懇更正並道歉",b:3,f:500},
+  {t:"護航說是口誤沒差",risk:true,p:0.35,s:{b:5,f:800},x:{b:-12,f:-1500}},
+  {t:"刪影片裝沒事",risk:true,p:0.25,s:{b:2,f:300},x:{b:-15,f:-2000}} ]},
+{c:"爭議",t:"有人在留言區許願「下架某則恐龍法官新聞」。",o:[
+  {t:"堅持新聞自由不下架",b:4,f:700},
+  {t:"迫於壓力下架",b:-6,f:-700},
+  {t:"改標題降低爭議",b:1,f:200} ]},
+{c:"爭議",t:"網紅在你貼文下開戰想蹭聲量，粉絲湧入。",o:[
+  {t:"冷靜回應就事論事",b:3,f:600},
+  {t:"接招互嗆衝話題",risk:true,p:0.45,s:{b:12,f:2100},x:{b:-14,f:-1700}},
+  {t:"封鎖網紅",b:-4,f:-500} ]},
+{c:"爭議",t:"有人留言說你「標題殺人」誤導閱聽眾。",o:[
+  {t:"修改成更精準的標題",b:2,f:300},
+  {t:"回「點進來看就懂了」",risk:true,p:0.4,s:{b:6,f:900},x:{b:-10,f:-1100}},
+  {t:"不理繼續下一篇",b:-2,f:-100} ]},
+{c:"爭議",t:"留言區有人揪團到你們粉專「1 星洗評價」。",o:[
+  {t:"發文幽默喊「手下留情」",risk:true,p:0.55,s:{b:9,f:1500},x:{b:-9,f:-1000}},
+  {t:"回報平台惡意評價",b:1,f:200},
+  {t:"硬撐不回應",b:-4,f:-400} ]},
+
+/* ===== 被諷刺 ===== */
+{c:"諷刺",t:"PTT 整理你今天三則新聞做成「TVSB 幹話集錦」爆文。",o:[
+  {t:"轉貼自嘲「我們很努力」",risk:true,p:0.6,s:{b:11,f:1900},x:{b:-8,f:-900}},
+  {t:"假裝沒看到",b:-3,f:-200},
+  {t:"去 PTT 留言反擊",risk:true,p:0.3,s:{b:5,f:800},x:{b:-14,f:-1800},hint:"鄉民很兇"} ]},
+{c:"諷刺",t:"有迷因粉專把你的標題 P 成諷刺圖，10 萬讚。",o:[
+  {t:"大方分享還加字幕",risk:true,p:0.6,s:{b:12,f:2100},x:{b:-9,f:-1000}},
+  {t:"要求對方下架",risk:true,p:0.25,s:{b:3,f:400},x:{b:-13,f:-1700}},
+  {t:"按個讚裝大器",b:2,f:400} ]},
+{c:"諷刺",t:"競爭台小編在他們貼文下陰陽怪氣 cue 你。",o:[
+  {t:"幽默回敬一句",risk:true,p:0.55,s:{b:10,f:1700},x:{b:-9,f:-1000}},
+  {t:"假裝沒看到專業做事",b:1,f:200},
+  {t:"去跟對方小編吵架",risk:true,p:0.3,s:{b:4,f:600},x:{b:-15,f:-2000}} ]},
+{c:"諷刺",t:"名嘴在節目上酸「現在小編素質堪憂」，被截出來。",o:[
+  {t:"發文溫和回應證明專業",b:4,f:700},
+  {t:"列出今天做的所有查證",b:3,f:500},
+  {t:"開嗆名嘴",risk:true,p:0.35,s:{b:7,f:1100},x:{b:-12,f:-1500}} ]},
+{c:"諷刺",t:"網友把你的錯字做成貼圖包在社群瘋傳。",o:[
+  {t:"自己也下載來用",risk:true,p:0.65,s:{b:10,f:1700},x:{b:-7,f:-700}},
+  {t:"默默訂正",b:1,f:200},
+  {t:"崩潰發長文解釋",risk:true,p:0.3,s:{b:3,f:400},x:{b:-11,f:-1300}} ]},
+{c:"諷刺",t:"有大 V 嘲諷你們「跟風抄別人的梗慢半拍」。",o:[
+  {t:"承認並承諾更快更原創",b:3,f:500},
+  {t:"回「我們是查證才慢」",risk:true,p:0.45,s:{b:8,f:1200},x:{b:-10,f:-1200}},
+  {t:"不理",b:-2,f:-100} ]},
+{c:"諷刺",t:"鄉民把你今天的即時新聞標題做成賓果連線。",o:[
+  {t:"自己也玩一輪轉發",risk:true,p:0.6,s:{b:9,f:1500},x:{b:-8,f:-900}},
+  {t:"檢討標題用詞",b:2,f:300},
+  {t:"假裝沒看到",b:-2,f:-100} ]},
+{c:"諷刺",t:"國外媒體轉述你們的烏龍新聞當笑話。",o:[
+  {t:"火速更正＋英文道歉",b:3,f:500},
+  {t:"刪原文裝沒事",risk:true,p:0.2,s:{b:2,f:300},x:{b:-16,f:-2200}},
+  {t:"嘴對方斷章取義",risk:true,p:0.3,s:{b:4,f:600},x:{b:-13,f:-1600}} ]},
+{c:"諷刺",t:"粉絲做了一支「小編崩潰的一天」二創影片超紅。",o:[
+  {t:"官方留言「這就是我」",risk:true,p:0.7,s:{b:11,f:1900},x:{b:-6,f:-600}},
+  {t:"分享並感謝粉絲",b:4,f:700},
+  {t:"覺得被冒犯要求下架",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1900}} ]},
+{c:"諷刺",t:"有人把你的新聞配上馬戲團音樂做成嘲諷短影音。",o:[
+  {t:"自己配更好笑的音樂回敬",risk:true,p:0.6,s:{b:10,f:1700},x:{b:-8,f:-900}},
+  {t:"按讚表示風度",b:2,f:400},
+  {t:"檢舉影片",risk:true,p:0.2,s:{b:1,f:200},x:{b:-12,f:-1500}} ]},
+{c:"諷刺",t:"同業群組截圖外流，裡面你被同行酸「只會抄留言」。",o:[
+  {t:"公開說明素材來源流程",b:3,f:500},
+  {t:"群組內冷靜澄清",b:1,f:200},
+  {t:"退出群組發文開戰",risk:true,p:0.3,s:{b:5,f:800},x:{b:-13,f:-1700}} ]},
+{c:"諷刺",t:"有知識型 YouTuber 做影片糾正你們的用詞錯誤。",o:[
+  {t:"留言感謝並更正",b:4,f:700,hint:"虛心受教圈粉"},
+  {t:"狡辯那是口語用法",risk:true,p:0.35,s:{b:4,f:600},x:{b:-11,f:-1300}},
+  {t:"不理",b:-2,f:-100} ]},
+{c:"諷刺",t:"網友留言「TVSB 小編是不是 AI？」質疑你沒感情。",o:[
+  {t:"發一則超有溫度的貼文反擊",risk:true,p:0.55,s:{b:9,f:1500},x:{b:-8,f:-900}},
+  {t:"回「我是真人，我很累」",risk:true,p:0.6,s:{b:8,f:1300},x:{b:-7,f:-700}},
+  {t:"不回應",b:-2,f:-100} ]},
+{c:"諷刺",t:"有人把你的即時快訊跟三個月前的一模一樣並排嘲諷。",o:[
+  {t:"承認炒冷飯並補新進度",b:2,f:400},
+  {t:"硬說是「後續追蹤」",risk:true,p:0.3,s:{b:4,f:600},x:{b:-12,f:-1400}},
+  {t:"刪舊文",risk:true,p:0.25,s:{b:2,f:300},x:{b:-11,f:-1300}} ]},
+{c:"諷刺",t:"政治人物在記者會點名你們小編「很愛帶風向」。",o:[
+  {t:"發正式聲明維持中立報導",b:4,f:700},
+  {t:"貼出平衡報導的證據",b:3,f:500},
+  {t:"回嗆政治人物",risk:true,p:0.3,s:{b:6,f:1000},x:{b:-14,f:-1800}} ]},
+{c:"諷刺",t:"鄉民封你為「本日最佳幹話小編」還頒獎。",o:[
+  {t:"幽默領獎發得獎感言",risk:true,p:0.65,s:{b:10,f:1700},x:{b:-6,f:-600}},
+  {t:"低調道謝",b:2,f:400},
+  {t:"覺得被羞辱不回應",b:-3,f:-200} ]},
+{c:"諷刺",t:"有人統計你一週用了 47 次「驚」當標題。",o:[
+  {t:"下一篇標題故意不用「驚」",risk:true,p:0.55,s:{b:7,f:1100},x:{b:-6,f:-600}},
+  {t:"承認並檢討標題習慣",b:2,f:300},
+  {t:"回「驚！竟然有人在數」",risk:true,p:0.5,s:{b:8,f:1300},x:{b:-8,f:-900}} ]},
+{c:"諷刺",t:"對手媒體做了「破解 TVSB 標題公式」的爆紅貼文。",o:[
+  {t:"也做一篇破解對手的回敬",risk:true,p:0.45,s:{b:9,f:1500},x:{b:-11,f:-1300}},
+  {t:"一笑置之按讚",b:2,f:400},
+  {t:"嚴正抗議",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"諷刺",t:"脫口秀把你們當素材講了 5 分鐘。",o:[
+  {t:"官方幽默回應還感謝宣傳",risk:true,p:0.6,s:{b:10,f:1700},x:{b:-7,f:-700}},
+  {t:"假裝沒看到",b:-2,f:-100},
+  {t:"發函抗議",risk:true,p:0.15,s:{b:1,f:200},x:{b:-13,f:-1700}} ]},
+{c:"諷刺",t:"有人把你的新聞做成「每日一廢」系列，追蹤數暴增。",o:[
+  {t:"反過來投稿給那個系列",risk:true,p:0.6,s:{b:9,f:1600},x:{b:-8,f:-900}},
+  {t:"檢討新聞品質",b:3,f:400},
+  {t:"不爽要求停更",risk:true,p:0.15,s:{b:1,f:200},x:{b:-12,f:-1500}} ]},
+
+/* ===== 文章出包 ===== */
+{c:"誤",t:"你把「北市」打成「北市長」送出了，已有 500 分享。",o:[
+  {t:"火速更正並置頂道歉",b:1,f:300,hint:"誠實但掉點面子"},
+  {t:"偷偷編輯裝沒事",risk:true,p:0.3,s:{b:4,f:500},x:{b:-14,f:-1900}},
+  {t:"硬拗是「預測性報導」",risk:true,p:0.2,s:{b:3,f:400},x:{b:-16,f:-2200}} ]},
+{c:"誤",t:"即時新聞把死傷人數多打一個 0，被瘋狂截圖。",o:[
+  {t:"立刻更正並嚴正道歉",b:-1,f:200},
+  {t:"刪文重發",risk:true,p:0.35,s:{b:3,f:500},x:{b:-15,f:-2100}},
+  {t:"甩鍋給外電來源",risk:true,p:0.25,s:{b:2,f:300},x:{b:-13,f:-1700}} ]},
+{c:"誤",t:"你引用的數據其實是去年的，被專家留言指正。",o:[
+  {t:"更新數據並致謝專家",b:3,f:500},
+  {t:"補一句「以上為去年資料」",b:1,f:200},
+  {t:"刪留言裝沒看到",risk:true,p:0.2,s:{b:2,f:300},x:{b:-13,f:-1700}} ]},
+{c:"誤",t:"配圖放錯人，把 A 議員的臉配到 B 議員新聞上。",o:[
+  {t:"立刻換圖＋公開道歉",b:-1,f:200},
+  {t:"默默換圖",risk:true,p:0.3,s:{b:3,f:400},x:{b:-14,f:-1900}},
+  {t:"硬說是「資料畫面」",risk:true,p:0.2,s:{b:2,f:300},x:{b:-15,f:-2000}} ]},
+{c:"誤",t:"你把國外城市名翻錯，地理老師在底下開課了。",o:[
+  {t:"更正並感謝老師",b:3,f:500},
+  {t:"回「音譯沒有標準」",risk:true,p:0.35,s:{b:4,f:600},x:{b:-10,f:-1200}},
+  {t:"不理",b:-2,f:-100} ]},
+{c:"誤",t:"標題寫「全台首例」結果被網友找出三年前就有案例。",o:[
+  {t:"改標題為「近年罕見」",b:1,f:200},
+  {t:"坦承查證不周",b:2,f:300},
+  {t:"堅持「這次比較嚴重」",risk:true,p:0.3,s:{b:3,f:500},x:{b:-12,f:-1500}} ]},
+{c:"誤",t:"你把運動員的獎牌顏色寫反了，粉絲暴動。",o:[
+  {t:"秒更正＋恭喜選手",b:2,f:400},
+  {t:"偷改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-11,f:-1400}},
+  {t:"狡辯「光線問題」",risk:true,p:0.15,s:{b:1,f:200},x:{b:-12,f:-1500}} ]},
+{c:"誤",t:"影片字幕把金額的單位寫錯（萬寫成億）。",o:[
+  {t:"重新上字幕並說明",b:1,f:200},
+  {t:"留言區置頂更正",b:2,f:300},
+  {t:"當作沒人會發現",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1800}} ]},
+{c:"誤",t:"你寫的「獨家」其實別台早上就報過了。",o:[
+  {t:"拿掉「獨家」字樣",b:0,f:100},
+  {t:"改成「獨家追蹤」",risk:true,p:0.35,s:{b:4,f:600},x:{b:-9,f:-1100}},
+  {t:"硬掛獨家不改",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"誤",t:"自動更正把人名改成了奇怪的詞，你沒檢查就發了。",o:[
+  {t:"立刻更正並自嘲手機害的",risk:true,p:0.55,s:{b:7,f:1100},x:{b:-6,f:-700}},
+  {t:"安靜改掉",b:0,f:100},
+  {t:"假裝是新梗",risk:true,p:0.3,s:{b:4,f:600},x:{b:-10,f:-1200}} ]},
+{c:"誤",t:"你把「嫌犯」跟「受害者」的身分寫顛倒了，超嚴重。",o:[
+  {t:"全面下架重寫＋鄭重道歉",b:-2,f:100,hint:"止血最重要"},
+  {t:"只改內文不聲明",risk:true,p:0.2,s:{b:2,f:300},x:{b:-18,f:-2600}},
+  {t:"推給實習生",risk:true,p:0.15,s:{b:1,f:200},x:{b:-16,f:-2200}} ]},
+{c:"誤",t:"你引用了一個已被闢謠的假訊息當新聞。",o:[
+  {t:"下架＋刊登更正啟事",b:-1,f:200},
+  {t:"補一句「查證中」",risk:true,p:0.3,s:{b:3,f:400},x:{b:-13,f:-1700}},
+  {t:"刪文消失",risk:true,p:0.25,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"誤",t:"時間軸寫錯，把事件順序顛倒導致誤解。",o:[
+  {t:"修正時間軸並說明",b:2,f:300},
+  {t:"補發澄清圖卡",b:3,f:500},
+  {t:"不管它",risk:true,p:0.2,s:{b:1,f:200},x:{b:-12,f:-1500}} ]},
+{c:"誤",t:"你把兩位同名藝人搞混，寫錯作品。",o:[
+  {t:"更正並 tag 正確的人",b:2,f:400},
+  {t:"默默改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-10,f:-1200}},
+  {t:"硬拗兩人都有演",risk:true,p:0.2,s:{b:1,f:200},x:{b:-12,f:-1500}} ]},
+{c:"誤",t:"你發了一則新聞，連結卻連到前一則舊新聞。",o:[
+  {t:"立刻修正連結",b:1,f:200},
+  {t:"留言補正確連結",b:2,f:300},
+  {t:"懶得改",risk:true,p:0.2,s:{b:1,f:200},x:{b:-9,f:-1100}} ]},
+{c:"誤",t:"你把攝氏華氏搞混，報成「氣溫將達 100 度」。",o:[
+  {t:"更正並自嘲差點煮熟",risk:true,p:0.6,s:{b:7,f:1100},x:{b:-6,f:-700}},
+  {t:"安靜改掉",b:0,f:100},
+  {t:"嘴網友不懂單位",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"新聞內文有一整段跟另一則新聞複製貼錯。",o:[
+  {t:"重新編輯並道歉",b:1,f:200},
+  {t:"偷刪那段",risk:true,p:0.3,s:{b:3,f:400},x:{b:-11,f:-1400}},
+  {t:"說是「延伸閱讀」",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"誤",t:"你把統計圖表的百分比加起來超過 100%。",o:[
+  {t:"換正確圖表並致歉",b:2,f:300},
+  {t:"補說明「可複選」",risk:true,p:0.4,s:{b:4,f:600},x:{b:-9,f:-1100}},
+  {t:"撤圖裝沒事",risk:true,p:0.25,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你搶快發了未證實的死訊，當事人本人出來說還活著。",o:[
+  {t:"下架＋登門道歉",b:-3,f:100,hint:"大雷，誠意止血"},
+  {t:"狡辯消息來源可靠",risk:true,p:0.15,s:{b:2,f:300},x:{b:-19,f:-2900}},
+  {t:"刪文消失",risk:true,p:0.2,s:{b:2,f:300},x:{b:-16,f:-2300}} ]},
+{c:"誤",t:"你把公司股價漲跌看反，財經粉絲炸鍋。",o:[
+  {t:"更正並附證交所資料",b:2,f:400},
+  {t:"硬拗「盤中波動」",risk:true,p:0.2,s:{b:2,f:300},x:{b:-13,f:-1700}},
+  {t:"刪文",risk:true,p:0.25,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你引用的「網友說」其實是你同事隨口講的。",o:[
+  {t:"改成正式查證的說法",b:1,f:200},
+  {t:"補上真實受訪者",b:3,f:500},
+  {t:"繼續掛「網友表示」",risk:true,p:0.3,s:{b:3,f:400},x:{b:-10,f:-1200}} ]},
+{c:"誤",t:"你發的懶人包有一格資訊完全錯誤，已被大量轉存。",o:[
+  {t:"重製正確版本並標註",b:2,f:400},
+  {t:"只在留言補更正",b:1,f:200},
+  {t:"假裝沒事",risk:true,p:0.2,s:{b:1,f:200},x:{b:-13,f:-1700}} ]},
+{c:"誤",t:"你把受訪者的職稱寫錯，對方私訊抗議。",o:[
+  {t:"立即更正並私訊致歉",b:2,f:300},
+  {t:"公開道歉展現誠意",b:3,f:500},
+  {t:"已讀不回",risk:true,p:0.2,s:{b:1,f:200},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你發新聞時 hashtag 標成了對手台的名字。",o:[
+  {t:"秒刪重發",b:0,f:100},
+  {t:"自嘲「幫對手衝聲量」",risk:true,p:0.55,s:{b:6,f:1000},x:{b:-6,f:-700}},
+  {t:"硬留著",risk:true,p:0.15,s:{b:1,f:200},x:{b:-10,f:-1200}} ]},
+{c:"誤",t:"你把「疑似」兩個字漏掉，變成斷定犯人。",o:[
+  {t:"立刻補回並說明",b:0,f:200},
+  {t:"全文下架重寫",b:-1,f:100},
+  {t:"當沒事",risk:true,p:0.2,s:{b:2,f:300},x:{b:-16,f:-2200}} ]},
+{c:"誤",t:"你把影片上下顛倒就發出去了。",o:[
+  {t:"重新上傳正確版本",b:1,f:200},
+  {t:"自嘲「請倒過來看」",risk:true,p:0.6,s:{b:6,f:1000},x:{b:-5,f:-600}},
+  {t:"硬留著",risk:true,p:0.15,s:{b:1,f:200},x:{b:-9,f:-1100}} ]},
+{c:"誤",t:"你把比賽比分打錯，輸贏完全相反。",o:[
+  {t:"立刻更正比分",b:1,f:300},
+  {t:"狡辯「以官方為準」",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}},
+  {t:"刪文重發",b:0,f:100} ]},
+{c:"誤",t:"你把「禁止」寫成「禁只」，被截圖當錯字王。",o:[
+  {t:"更正並自嘲手速太快",risk:true,p:0.6,s:{b:6,f:1000},x:{b:-5,f:-600}},
+  {t:"安靜訂正",b:0,f:100},
+  {t:"硬說是注音文",risk:true,p:0.25,s:{b:3,f:400},x:{b:-8,f:-900}} ]},
+{c:"誤",t:"你發新聞忘了打馬賽克，露出未成年人臉。",o:[
+  {t:"火速下架重製＋道歉",b:-2,f:100,hint:"法務級大雷"},
+  {t:"只補馬賽克不聲明",risk:true,p:0.2,s:{b:2,f:300},x:{b:-17,f:-2400}},
+  {t:"推給後製",risk:true,p:0.15,s:{b:1,f:200},x:{b:-15,f:-2000}} ]},
+
+/* ===== 炎上 ===== */
+{c:"炎上",t:"你的一則貼文被名人轉發開嗆，10 分鐘湧入 5000 則怒罵。",o:[
+  {t:"冷靜發澄清文滅火",b:2,f:300},
+  {t:"硬剛名人衝話題",risk:true,p:0.35,s:{b:13,f:2500},x:{b:-18,f:-2800}},
+  {t:"關留言躲風頭",b:-5,f:-400} ]},
+{c:"炎上",t:"#TVSB道歉 衝上趨勢第一。",o:[
+  {t:"發正式道歉聲明",b:1,f:300},
+  {t:"直播回應展現誠意",risk:true,p:0.45,s:{b:12,f:2200},x:{b:-14,f:-1900}},
+  {t:"裝死等它退燒",risk:true,p:0.3,s:{b:4,f:600},x:{b:-16,f:-2300}} ]},
+{c:"炎上",t:"網友集體到你們廣告主的粉專施壓抵制。",o:[
+  {t:"主動聯繫廣告主說明",b:1,f:200},
+  {t:"發文安撫雙方",b:3,f:400},
+  {t:"不管它燒",risk:true,p:0.2,s:{b:3,f:500},x:{b:-17,f:-2500}} ]},
+{c:"炎上",t:"一句被斷章取義的標題讓你被罵「冷血媒體」。",o:[
+  {t:"貼出完整上下文澄清",b:3,f:500},
+  {t:"修改標題並道歉",b:1,f:300},
+  {t:"回嗆網友不看內文",risk:true,p:0.3,s:{b:6,f:1000},x:{b:-15,f:-2000}} ]},
+{c:"炎上",t:"你轉發的梗圖被指控抄襲小創作者，炎上中。",o:[
+  {t:"下架並公開標註原作者",b:2,f:400},
+  {t:"聯繫原作者道歉授權",b:4,f:700},
+  {t:"硬說是致敬",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1900}} ]},
+{c:"炎上",t:"你的用詞被指涉及歧視，社群正在出征。",o:[
+  {t:"虛心道歉並修正用詞",b:2,f:400},
+  {t:"解釋原意並教育大眾",risk:true,p:0.35,s:{b:7,f:1200},x:{b:-14,f:-1900}},
+  {t:"刪文消失",risk:true,p:0.25,s:{b:2,f:300},x:{b:-15,f:-2100}} ]},
+{c:"炎上",t:"有人爆料你半夜用官方帳號按了爭議貼文的讚。",o:[
+  {t:"坦承手滑並道歉",risk:true,p:0.5,s:{b:6,f:900},x:{b:-9,f:-1100}},
+  {t:"推給帳號被盜",risk:true,p:0.25,s:{b:4,f:600},x:{b:-14,f:-1900}},
+  {t:"當沒這回事",risk:true,p:0.2,s:{b:2,f:300},x:{b:-13,f:-1700}} ]},
+{c:"炎上",t:"你們的報導被控造成當事人網路霸凌，家屬發聲。",o:[
+  {t:"下架報導＋公開致歉",b:-1,f:200,hint:"人命關天"},
+  {t:"發聲明說依事實報導",risk:true,p:0.3,s:{b:5,f:800},x:{b:-16,f:-2300}},
+  {t:"沉默",risk:true,p:0.2,s:{b:2,f:300},x:{b:-15,f:-2100}} ]},
+{c:"炎上",t:"你回覆網友的語氣被截圖，被說「官方帳號很跩」。",o:[
+  {t:"公開道歉並調整語氣",b:2,f:400},
+  {t:"解釋只是想幽默",risk:true,p:0.4,s:{b:6,f:1000},x:{b:-11,f:-1400}},
+  {t:"硬剛「我就這語氣」",risk:true,p:0.25,s:{b:4,f:700},x:{b:-14,f:-1900}} ]},
+{c:"炎上",t:"舊貼文被翻出，裡面立場跟今天完全相反，炎上。",o:[
+  {t:"說明立場隨事實調整",b:3,f:500},
+  {t:"刪舊文",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1900}},
+  {t:"硬拗兩篇不矛盾",risk:true,p:0.3,s:{b:4,f:600},x:{b:-11,f:-1400}} ]},
+{c:"炎上",t:"你的投票貼文被指設計引導特定答案，被圍剿。",o:[
+  {t:"重做中立版投票並說明",b:3,f:500},
+  {t:"下架投票道歉",b:1,f:200},
+  {t:"硬說沒有引導",risk:true,p:0.3,s:{b:4,f:600},x:{b:-12,f:-1500}} ]},
+{c:"炎上",t:"你用了一張有版權的新聞照，攝影師公開求償。",o:[
+  {t:"立刻下架並聯繫授權",b:1,f:200},
+  {t:"換成自家素材道歉",b:2,f:300},
+  {t:"硬說是合理使用",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1900}} ]},
+{c:"炎上",t:"你玩了一個時事哏，結果踩到災難受害者痛點。",o:[
+  {t:"立刻刪文＋誠懇道歉",b:-1,f:200},
+  {t:"解釋原意無惡意",risk:true,p:0.3,s:{b:5,f:800},x:{b:-14,f:-1900}},
+  {t:"硬留著",risk:true,p:0.15,s:{b:2,f:300},x:{b:-16,f:-2200}} ]},
+{c:"炎上",t:"全網都在罵你們標題帶血腥，兒少團體發聲明。",o:[
+  {t:"修改標題並承諾自律",b:2,f:400},
+  {t:"發文說明新聞價值",risk:true,p:0.3,s:{b:5,f:800},x:{b:-13,f:-1700}},
+  {t:"不理",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1900}} ]},
+{c:"炎上",t:"有網友發起「取消追蹤 TVSB」活動，掉粉中。",o:[
+  {t:"發真誠長文溝通挽留",risk:true,p:0.5,s:{b:9,f:1500},x:{b:-10,f:-1300}},
+  {t:"做一波優質內容止血",b:3,f:600},
+  {t:"擺爛不管",risk:true,p:0.15,s:{b:2,f:300},x:{b:-15,f:-2000}} ]},
+{c:"炎上",t:"你的即時新聞被控「製造恐慌」，官方單位出面澄清。",o:[
+  {t:"更新新聞並引述官方",b:3,f:500},
+  {t:"補充說明無意恐慌",b:1,f:200},
+  {t:"硬說是提醒民眾",risk:true,p:0.3,s:{b:4,f:600},x:{b:-12,f:-1500}} ]},
+{c:"炎上",t:"你誤發了還沒寫完的草稿，裡面有內部備註「隨便寫」。",o:[
+  {t:"秒刪＋幽默自首",risk:true,p:0.55,s:{b:7,f:1100},x:{b:-8,f:-900}},
+  {t:"假裝是測試",risk:true,p:0.25,s:{b:3,f:400},x:{b:-13,f:-1700}},
+  {t:"甩鍋系統出錯",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"炎上",t:"你回錯視窗，把要罵同事的話發到官方帳號了。",o:[
+  {t:"立刻刪＋道歉自嘲",risk:true,p:0.5,s:{b:6,f:900},x:{b:-9,f:-1100}},
+  {t:"說帳號被盜",risk:true,p:0.2,s:{b:3,f:400},x:{b:-13,f:-1700}},
+  {t:"硬拗是反串",risk:true,p:0.25,s:{b:4,f:600},x:{b:-11,f:-1400}} ]},
+{c:"炎上",t:"你們的報導被指控沒求證就點名企業，對方發律師函。",o:[
+  {t:"下架並公開更正",b:-1,f:200},
+  {t:"補上企業回應",b:2,f:300},
+  {t:"硬剛準備打官司",risk:true,p:0.2,s:{b:3,f:500},x:{b:-16,f:-2300}} ]},
+{c:"炎上",t:"你的諧音標題被長輩群組瘋傳成假訊息。",o:[
+  {t:"改成清楚標題並澄清",b:2,f:400},
+  {t:"製作闢謠圖卡",b:3,f:500},
+  {t:"覺得好笑不處理",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"炎上",t:"你轉發的影片其實是 AI 生成的假畫面，被抓包炎上。",o:[
+  {t:"下架並說明查證疏失",b:-1,f:200},
+  {t:"補標註「AI 生成」",risk:true,p:0.35,s:{b:5,f:800},x:{b:-12,f:-1500}},
+  {t:"硬說沒差",risk:true,p:0.15,s:{b:2,f:300},x:{b:-15,f:-2000}} ]},
+{c:"炎上",t:"網友發現你同一句話複製貼到三個不同新聞底下。",o:[
+  {t:"坦承偷懶並重寫",risk:true,p:0.5,s:{b:6,f:900},x:{b:-8,f:-900}},
+  {t:"說是統一回覆",risk:true,p:0.3,s:{b:4,f:600},x:{b:-10,f:-1200}},
+  {t:"刪留言",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"炎上",t:"你的年度回顧漏掉某重大事件，被罵選擇性遺忘。",o:[
+  {t:"立刻補上並道歉",b:2,f:400},
+  {t:"解釋篇幅有限",risk:true,p:0.3,s:{b:4,f:600},x:{b:-11,f:-1400}},
+  {t:"不理",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"炎上",t:"你用的背景音樂被原作者指控未授權，炎上延燒。",o:[
+  {t:"換成授權音樂＋道歉",b:1,f:200},
+  {t:"下架影片",b:0,f:100},
+  {t:"硬說合理使用",risk:true,p:0.2,s:{b:2,f:300},x:{b:-13,f:-1700}} ]},
+{c:"炎上",t:"你在限動發了政治立場明顯的貼文，被截圖放大檢視。",o:[
+  {t:"刪除並聲明代表個人",b:1,f:200},
+  {t:"公開道歉維持中立",b:2,f:400},
+  {t:"硬剛「我有言論自由」",risk:true,p:0.3,s:{b:5,f:900},x:{b:-14,f:-1900}} ]},
+{c:"炎上",t:"你誤把內部排程表截圖貼出來，洩漏明天的頭條。",o:[
+  {t:"秒刪＋幽默帶過",risk:true,p:0.5,s:{b:6,f:900},x:{b:-8,f:-900}},
+  {t:"假裝是故意預告",risk:true,p:0.35,s:{b:5,f:800},x:{b:-10,f:-1200}},
+  {t:"甩鍋手滑",risk:true,p:0.25,s:{b:3,f:400},x:{b:-11,f:-1400}} ]},
+{c:"炎上",t:"你回覆奧客網友時被截到翻白眼的即時貼圖。",o:[
+  {t:"道歉並收回貼圖",b:1,f:200},
+  {t:"自嘲「小編也是人」",risk:true,p:0.5,s:{b:7,f:1100},x:{b:-8,f:-900}},
+  {t:"硬剛那網友活該",risk:true,p:0.25,s:{b:4,f:700},x:{b:-12,f:-1500}} ]},
+{c:"炎上",t:"你的新聞被控煽動對立，兩派都在罵你。",o:[
+  {t:"發平衡補述安撫兩邊",b:3,f:500},
+  {t:"下架重寫中立版",b:1,f:200},
+  {t:"硬剛「事實就這樣」",risk:true,p:0.3,s:{b:5,f:800},x:{b:-13,f:-1700}} ]},
+{c:"炎上",t:"有網友把你所有出包做成「小編黑歷史懶人包」瘋傳。",o:[
+  {t:"大方認錯＋承諾改進",risk:true,p:0.5,s:{b:8,f:1300},x:{b:-9,f:-1100}},
+  {t:"低調道歉",b:1,f:200},
+  {t:"要求對方下架",risk:true,p:0.15,s:{b:2,f:300},x:{b:-13,f:-1700}} ]},
+
+/* ===== 日常（喘息/小確幸/陷阱） ===== */
+{c:"日常",t:"主管傳訊：「今天要衝 KPI，給我爆款。」",o:[
+  {t:"穩穩做一則優質內容",b:2,f:500},
+  {t:"賭一波聳動標題",risk:true,p:0.4,s:{b:11,f:2000},x:{b:-10,f:-1200}},
+  {t:"回主管「盡力」然後擺爛",b:-3,f:-200} ]},
+{c:"日常",t:"你排的一則暖心新聞意外被大量轉發。",o:[
+  {t:"趁勢再追一篇相關報導",risk:true,p:0.6,s:{b:9,f:1500},x:{b:-5,f:-500}},
+  {t:"見好就收專心守成",b:4,f:700},
+  {t:"馬上接業配蹭熱度",risk:true,p:0.3,s:{b:4,f:600},x:{b:-9,f:-1000}} ]},
+{c:"日常",t:"午休時間，你可以休息一下，也可以多發一篇。",o:[
+  {t:"好好休息回血",b:5,f:200,hint:"穩定加聲量"},
+  {t:"多發一篇拚流量",risk:true,p:0.5,s:{b:7,f:1200},x:{b:-6,f:-700}},
+  {t:"滑手機看對手動態",b:1,f:100} ]},
+{c:"日常",t:"有粉絲私訊感謝你的報導幫了他。",o:[
+  {t:"真誠回覆並分享故事",risk:true,p:0.7,s:{b:8,f:1300},x:{b:-3,f:-300}},
+  {t:"簡單道謝",b:3,f:400},
+  {t:"已讀不回忙別的",b:-2,f:-200} ]},
+{c:"日常",t:"同事問你要不要一起跟一個很夯但很敏感的時事哏。",o:[
+  {t:"謹慎評估後保守處理",b:3,f:400},
+  {t:"大膽跟哏衝聲量",risk:true,p:0.4,s:{b:12,f:2100},x:{b:-13,f:-1700}},
+  {t:"完全不碰",b:0,f:-200} ]},
+{c:"日常",t:"演算法突然改版，你的觸及掉了一半。",o:[
+  {t:"研究新演算法調整策略",b:3,f:400},
+  {t:"狂發文洗版賭觸及",risk:true,p:0.35,s:{b:7,f:1100},x:{b:-9,f:-1100}},
+  {t:"擺爛等它自己好",b:-4,f:-500} ]},
+{c:"日常",t:"你發現一個冷門但很有意義的議題，不一定有流量。",o:[
+  {t:"用心做深度報導",risk:true,p:0.5,s:{b:9,f:1400},x:{b:-4,f:-400},hint:"賭口碑"},
+  {t:"簡單帶過就好",b:1,f:100},
+  {t:"直接放棄做熱門的",b:-1,f:200} ]},
+{c:"日常",t:"晚間時段，聲量穩定，可以嘗試有趣的互動企劃。",o:[
+  {t:"辦一個限動問答",risk:true,p:0.6,s:{b:8,f:1300},x:{b:-5,f:-500}},
+  {t:"穩穩發常規新聞",b:3,f:400},
+  {t:"提早收工",b:-2,f:-100} ]},
+{c:"日常",t:"你靈機一動想到一個超有梗的貼文點子。",o:[
+  {t:"精修後發出",risk:true,p:0.6,s:{b:10,f:1700},x:{b:-6,f:-700}},
+  {t:"先問主管意見",b:2,f:300},
+  {t:"怕出包放棄",b:-1,f:0} ]},
+{c:"日常",t:"快下班了，突然有一則突發新聞進來。",o:[
+  {t:"扛起來好好處理",risk:true,p:0.55,s:{b:9,f:1500},x:{b:-8,f:-900}},
+  {t:"謹慎發簡短快訊",b:2,f:400},
+  {t:"丟給大夜班",b:-3,f:-300} ]},
+{c:"日常",t:"粉絲在限動許願想看幕後花絮。",o:[
+  {t:"拍一段辦公室日常",risk:true,p:0.65,s:{b:8,f:1300},x:{b:-4,f:-400}},
+  {t:"發幾張照片",b:3,f:400},
+  {t:"說之後再說",b:-1,f:-100} ]},
+
+/* ===== 擴充批次 ===== */
+/* -- 爭議 -- */
+{c:"爭議",t:"有人在留言區貼出疑似深偽（deepfake）的政治人物影片。",o:[
+  {t:"標註可能造假並澄清",b:3,f:500},
+  {t:"刪掉避免擴散",b:-2,f:200},
+  {t:"當真拿來發新聞",risk:true,p:0.3,s:{b:12,f:2300},x:{b:-19,f:-3000}} ]},
+{c:"爭議",t:"選舉造勢新聞下，兩陣營支持者在留言區互報數字開戰。",o:[
+  {t:"置頂中選會官方資訊",b:3,f:500},
+  {t:"選一邊的數字置頂",risk:true,p:0.3,s:{b:8,f:1500},x:{b:-14,f:-1900}},
+  {t:"關留言冷處理",b:-4,f:100} ]},
+{c:"爭議",t:"有網友留言爆料某藝人緋聞，還附上模糊照。",o:[
+  {t:"先私下求證再決定",b:-1,f:100},
+  {t:"馬上截圖做獨家",risk:true,p:0.3,s:{b:14,f:2600},x:{b:-18,f:-2900}},
+  {t:"刪留言不碰",b:-3,f:-200} ]},
+{c:"爭議",t:"健康新聞下，有人瘋狂留言推銷未證實偏方。",o:[
+  {t:"附食藥署資料澄清",b:4,f:600},
+  {t:"刪除可疑留言",b:-2,f:200},
+  {t:"放著當互動量",risk:true,p:0.25,s:{b:5,f:800},x:{b:-14,f:-1900}} ]},
+{c:"爭議",t:"寵物受虐影片下，網友開始肉搜貼出飼主個資。",o:[
+  {t:"關留言阻止肉搜",b:-3,f:200},
+  {t:"置頂「交給警方」提醒",b:3,f:500},
+  {t:"放任肉搜衝聲量",risk:true,p:0.3,s:{b:9,f:1800},x:{b:-17,f:-2400}} ]},
+{c:"爭議",t:"兩岸議題新聞湧入帶風向留言，有人 tag 國安單位。",o:[
+  {t:"官方回「理性討論」",b:1,f:200},
+  {t:"補平衡觀點說明",b:3,f:400},
+  {t:"跟著嗆其中一方",risk:true,p:0.3,s:{b:7,f:1200},x:{b:-14,f:-1800}} ]},
+{c:"爭議",t:"房價新聞底下仇富留言洗版，點名特定建商。",o:[
+  {t:"補上建商正式回應",b:3,f:400},
+  {t:"隱藏可能毀謗的留言",b:-2,f:100},
+  {t:"跟風酸建商",risk:true,p:0.35,s:{b:7,f:1100},x:{b:-12,f:-1500}} ]},
+{c:"爭議",t:"球星轉隊新聞下，兩隊球迷在留言區出征互罵。",o:[
+  {t:"置頂官方公告止戰",b:2,f:400},
+  {t:"發個中立梗圖緩和",risk:true,p:0.5,s:{b:8,f:1300},x:{b:-8,f:-900}},
+  {t:"選邊按讚",risk:true,p:0.3,s:{b:6,f:1000},x:{b:-12,f:-1500}} ]},
+{c:"爭議",t:"有留言質疑你們疫情數據來源造假，獲大量附和。",o:[
+  {t:"附上疾管署連結澄清",b:4,f:600},
+  {t:"回「不信不要看」",risk:true,p:0.25,s:{b:5,f:800},x:{b:-14,f:-1800}},
+  {t:"刪留言",b:-3,f:-100} ]},
+{c:"爭議",t:"有網友留言要求你們公開當班記者的真實姓名。",o:[
+  {t:"婉拒並說明保護原則",b:3,f:400},
+  {t:"硬回「關你什麼事」",risk:true,p:0.25,s:{b:4,f:700},x:{b:-13,f:-1700}},
+  {t:"不理",b:-2,f:-100} ]},
+{c:"爭議",t:"學生留言爆料老師不當言行，真假不明但很多人信。",o:[
+  {t:"私訊了解並查證",b:1,f:200},
+  {t:"直接做成新聞",risk:true,p:0.3,s:{b:12,f:2200},x:{b:-17,f:-2500}},
+  {t:"先不碰",b:-2,f:-100} ]},
+{c:"爭議",t:"外送員車禍新聞下，留言分成「同情」與「檢討」兩派開戰。",o:[
+  {t:"補上交通安全資訊",b:3,f:500},
+  {t:"置頂其中一派留言",risk:true,p:0.3,s:{b:7,f:1200},x:{b:-12,f:-1600}},
+  {t:"關留言",b:-4,f:0} ]},
+{c:"爭議",t:"有網友在留言貼出競爭台主管的疑似黑料。",o:[
+  {t:"不碰，刪除留言",b:-2,f:100},
+  {t:"截圖偷偷轉給同事",risk:true,p:0.3,s:{b:6,f:900},x:{b:-13,f:-1700}},
+  {t:"直接發新聞打對手",risk:true,p:0.2,s:{b:11,f:2000},x:{b:-18,f:-2700}} ]},
+{c:"爭議",t:"名人過世新聞下，留言區在搶「頭香」被罵冷血。",o:[
+  {t:"置頂悼念引導風向",b:3,f:500},
+  {t:"隱藏搶頭香留言",b:-2,f:100},
+  {t:"跟著開玩笑",risk:true,p:0.2,s:{b:4,f:700},x:{b:-16,f:-2200}} ]},
+{c:"爭議",t:"有水軍帳號在留言區大量複製貼上同一段業配文案。",o:[
+  {t:"公告並封鎖水軍",b:4,f:600},
+  {t:"假裝很多人討論不處理",risk:true,p:0.25,s:{b:5,f:800},x:{b:-13,f:-1700}},
+  {t:"默默檢舉後關留言",b:-3,f:100} ]},
+
+/* -- 諷刺 -- */
+{c:"諷刺",t:"鄉民把你的中英夾雜標題做成「TVSB 翻譯蒟蒻」爆文。",o:[
+  {t:"自嘲轉發還附翻譯",risk:true,p:0.6,s:{b:10,f:1700},x:{b:-8,f:-900}},
+  {t:"檢討標題用語",b:2,f:300},
+  {t:"要求對方下架",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"諷刺",t:"脫口秀把你一週的標題串成一段笑料。",o:[
+  {t:"幽默回應還感謝宣傳",risk:true,p:0.6,s:{b:10,f:1700},x:{b:-7,f:-700}},
+  {t:"假裝沒看到",b:-2,f:-100},
+  {t:"發函抗議",risk:true,p:0.15,s:{b:1,f:200},x:{b:-13,f:-1700}} ]},
+{c:"諷刺",t:"對手台小編在限動隔空喊話「某台又跟我們的梗」。",o:[
+  {t:"大方承認並玩更大",risk:true,p:0.5,s:{b:9,f:1500},x:{b:-9,f:-1100}},
+  {t:"專業做事不回應",b:1,f:200},
+  {t:"開戰互嗆",risk:true,p:0.3,s:{b:5,f:800},x:{b:-14,f:-1800}} ]},
+{c:"諷刺",t:"政治人物在直播中點名「某台小編最愛帶風向」。",o:[
+  {t:"發聲明附平衡報導證據",b:4,f:600},
+  {t:"虛心檢討用語",b:2,f:300},
+  {t:"回嗆政治人物",risk:true,p:0.3,s:{b:6,f:1000},x:{b:-14,f:-1800}} ]},
+{c:"諷刺",t:"網友把你常用的「超狂」「暴動」做成賓果卡。",o:[
+  {t:"下一篇故意一個都不用",risk:true,p:0.55,s:{b:7,f:1100},x:{b:-6,f:-600}},
+  {t:"檢討詞彙習慣",b:2,f:300},
+  {t:"回「超狂！竟然有人做」",risk:true,p:0.5,s:{b:8,f:1300},x:{b:-8,f:-900}} ]},
+{c:"諷刺",t:"知識型 YouTuber 做了一支影片糾正你們的成語誤用。",o:[
+  {t:"留言感謝並更正",b:4,f:700},
+  {t:"狡辯那是約定俗成",risk:true,p:0.3,s:{b:4,f:600},x:{b:-11,f:-1300}},
+  {t:"不理",b:-2,f:-100} ]},
+{c:"諷刺",t:"有人統計你本月用了 62 次「網轟」當標題。",o:[
+  {t:"自嘲並換新用語",risk:true,p:0.55,s:{b:8,f:1200},x:{b:-6,f:-700}},
+  {t:"坦承檢討",b:2,f:300},
+  {t:"回「網轟我喔」",risk:true,p:0.5,s:{b:7,f:1100},x:{b:-8,f:-900}} ]},
+{c:"諷刺",t:"網友又在問「你們小編是不是 AI 代寫？」",o:[
+  {t:"發一則超有溫度的貼文",risk:true,p:0.55,s:{b:9,f:1500},x:{b:-8,f:-900}},
+  {t:"回「我是真人我會累」",risk:true,p:0.6,s:{b:8,f:1300},x:{b:-7,f:-700}},
+  {t:"不回應",b:-2,f:-100} ]},
+{c:"諷刺",t:"粉絲把你的錯字剪成「小編崩潰日曆」每天一則。",o:[
+  {t:"投稿自己最慘的一則",risk:true,p:0.6,s:{b:9,f:1600},x:{b:-8,f:-900}},
+  {t:"虛心檢討校稿",b:2,f:300},
+  {t:"要求停更",risk:true,p:0.15,s:{b:1,f:200},x:{b:-12,f:-1500}} ]},
+{c:"諷刺",t:"國外論壇把你們的烏龍新聞翻譯出去當迷因。",o:[
+  {t:"火速更正並英文說明",b:3,f:500},
+  {t:"刪原文裝沒事",risk:true,p:0.2,s:{b:2,f:300},x:{b:-15,f:-2000}},
+  {t:"嘴對方不懂中文",risk:true,p:0.25,s:{b:3,f:500},x:{b:-12,f:-1500}} ]},
+{c:"諷刺",t:"有迷因粉專做了「TVSB 標題產生器」還能亂數組合。",o:[
+  {t:"自己玩一輪轉發",risk:true,p:0.6,s:{b:9,f:1500},x:{b:-8,f:-900}},
+  {t:"按讚表示風度",b:2,f:400},
+  {t:"檢舉抄襲",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"諷刺",t:"名嘴在節目酸「現在小編連字都打不對」。",o:[
+  {t:"列出今日查證流程回應",b:3,f:500},
+  {t:"溫和證明專業",b:3,f:400},
+  {t:"開嗆名嘴",risk:true,p:0.3,s:{b:6,f:1000},x:{b:-13,f:-1600}} ]},
+
+/* -- 誤 -- */
+{c:"誤",t:"你直播時不小心把後台編輯畫面開給觀眾看了。",o:[
+  {t:"立刻切掉並說明",b:0,f:200},
+  {t:"假裝是幕後花絮",risk:true,p:0.45,s:{b:6,f:1000},x:{b:-9,f:-1100}},
+  {t:"硬著頭皮繼續",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"誤",t:"你放錯颱風路徑圖，把登陸點標到隔壁國去了。",o:[
+  {t:"換正確圖＋道歉",b:1,f:300},
+  {t:"默默換圖",risk:true,p:0.3,s:{b:3,f:400},x:{b:-13,f:-1700}},
+  {t:"狡辯是「參考路徑」",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"誤",t:"地震速報你把規模 5.2 打成 52，網友嚇歪。",o:[
+  {t:"秒更正並安撫",b:1,f:300},
+  {t:"刪文重發",b:0,f:100},
+  {t:"當沒事",risk:true,p:0.2,s:{b:2,f:300},x:{b:-15,f:-2000}} ]},
+{c:"誤",t:"體育新聞你把 A 隊的奪冠照配到 B 隊的報導。",o:[
+  {t:"立刻換圖並道歉",b:1,f:300},
+  {t:"偷偷換掉",risk:true,p:0.3,s:{b:3,f:400},x:{b:-11,f:-1400}},
+  {t:"硬拗是資料畫面",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"誤",t:"開票即時更新，你的票數一度跳錯比對手多十萬。",o:[
+  {t:"立刻更正並標註即時",b:1,f:300},
+  {t:"刪掉那則截圖",risk:true,p:0.3,s:{b:3,f:400},x:{b:-14,f:-1800}},
+  {t:"硬說是作業延遲",risk:true,p:0.25,s:{b:3,f:500},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你把「嫌犯落網」打成「嫌犯落跑」，瞬間瘋傳。",o:[
+  {t:"火速更正並道歉",b:0,f:200},
+  {t:"偷改內文",risk:true,p:0.3,s:{b:3,f:400},x:{b:-13,f:-1700}},
+  {t:"自嘲手滑公告更正",risk:true,p:0.55,s:{b:6,f:1000},x:{b:-6,f:-700}} ]},
+{c:"誤",t:"財經新聞你把匯率小數點點錯，差了十倍。",o:[
+  {t:"更正並附央行資料",b:2,f:300},
+  {t:"硬拗是盤中跳動",risk:true,p:0.2,s:{b:2,f:300},x:{b:-13,f:-1700}},
+  {t:"刪文",risk:true,p:0.25,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你把連假日期寫錯，害網友以為多放一天。",o:[
+  {t:"更正並附行政院公告",b:2,f:400},
+  {t:"留言置頂更正",b:1,f:200},
+  {t:"當作沒人會當真",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"誤",t:"你引用了一個假帳號的截圖當成官方說法。",o:[
+  {t:"下架並刊更正啟事",b:-1,f:200},
+  {t:"補查證後換來源",b:2,f:300},
+  {t:"硬說來源可靠",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1800}} ]},
+{c:"誤",t:"你把受訪專家的名字寫成他的網路綽號。",o:[
+  {t:"更正並私訊致歉",b:2,f:300},
+  {t:"默默改掉",risk:true,p:0.3,s:{b:3,f:400},x:{b:-10,f:-1200}},
+  {t:"硬說大家都這樣叫",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"標題少一個字，「禁止酒駕」變成「止酒駕」被瘋傳。",o:[
+  {t:"更正並自嘲手速",risk:true,p:0.6,s:{b:6,f:1000},x:{b:-5,f:-600}},
+  {t:"安靜訂正",b:0,f:100},
+  {t:"硬說是新標語",risk:true,p:0.25,s:{b:3,f:400},x:{b:-8,f:-900}} ]},
+{c:"誤",t:"你把三個月前的舊新聞當即時發出去了。",o:[
+  {t:"下架並說明是舊聞",b:0,f:200},
+  {t:"改成「回顧」補救",risk:true,p:0.4,s:{b:4,f:600},x:{b:-9,f:-1100}},
+  {t:"硬掛即時",risk:true,p:0.2,s:{b:2,f:300},x:{b:-13,f:-1700}} ]},
+{c:"誤",t:"影片字幕把兩位來賓的名字上下顛倒。",o:[
+  {t:"重上字幕並致歉",b:1,f:200},
+  {t:"留言置頂更正",b:2,f:300},
+  {t:"當沒人會發現",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你發的影片忘記靜音，錄到同事在旁邊罵髒話。",o:[
+  {t:"秒下架重上傳",b:0,f:100},
+  {t:"自嘲辦公室日常",risk:true,p:0.5,s:{b:6,f:1000},x:{b:-8,f:-900}},
+  {t:"硬留著",risk:true,p:0.15,s:{b:1,f:200},x:{b:-13,f:-1700}} ]},
+{c:"誤",t:"你把「連三年下滑」寫成「連三年成長」，方向完全反。",o:[
+  {t:"更正並附統計來源",b:2,f:300},
+  {t:"偷改數字",risk:true,p:0.3,s:{b:3,f:400},x:{b:-12,f:-1500}},
+  {t:"硬拗看的角度不同",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+
+/* -- 炎上 -- */
+{c:"炎上",t:"你轉發的「現場照」被抓出是 AI 生成的假圖，炎上。",o:[
+  {t:"下架並說明查證疏失",b:-1,f:200},
+  {t:"補標「AI 示意圖」",risk:true,p:0.35,s:{b:5,f:800},x:{b:-12,f:-1500}},
+  {t:"硬說沒差",risk:true,p:0.15,s:{b:2,f:300},x:{b:-16,f:-2200}} ]},
+{c:"炎上",t:"深偽影片受害者發現你們當真報導，發律師函求償。",o:[
+  {t:"下架＋公開致歉",b:-2,f:100},
+  {t:"發聲明說依來源報導",risk:true,p:0.25,s:{b:4,f:700},x:{b:-17,f:-2500}},
+  {t:"沉默",risk:true,p:0.2,s:{b:2,f:300},x:{b:-16,f:-2200}} ]},
+{c:"炎上",t:"你用喪事新聞玩了諧音哏，家屬在底下發聲抗議。",o:[
+  {t:"立刻刪文＋誠懇道歉",b:-1,f:200},
+  {t:"解釋原意無惡意",risk:true,p:0.3,s:{b:5,f:800},x:{b:-15,f:-2000}},
+  {t:"硬留著",risk:true,p:0.15,s:{b:2,f:300},x:{b:-16,f:-2200}} ]},
+{c:"炎上",t:"你辦的抽獎遲遲沒公布得主，被網友罵詐騙。",o:[
+  {t:"立刻公開得主＋補償",b:2,f:400},
+  {t:"發聲明說明作業延誤",b:1,f:200},
+  {t:"假裝沒這回事",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1900}} ]},
+{c:"炎上",t:"有人抓出你那則貼文其實是業配卻沒標。",o:[
+  {t:"補標業配並道歉",b:1,f:200},
+  {t:"下架重發標明合作",b:2,f:300},
+  {t:"硬說只是分享",risk:true,p:0.2,s:{b:2,f:300},x:{b:-16,f:-2300}} ]},
+{c:"炎上",t:"你手滑誤刪了上千則網友留言，大家氣炸。",o:[
+  {t:"公開道歉並說明失誤",risk:true,p:0.5,s:{b:6,f:900},x:{b:-9,f:-1100}},
+  {t:"推給系統異常",risk:true,p:0.25,s:{b:4,f:600},x:{b:-13,f:-1700}},
+  {t:"當沒事",risk:true,p:0.2,s:{b:2,f:300},x:{b:-13,f:-1700}} ]},
+{c:"炎上",t:"你誤發了一則測試貼文，內容只有「ㄜㄜ測試」。",o:[
+  {t:"秒刪＋幽默自首",risk:true,p:0.55,s:{b:7,f:1100},x:{b:-7,f:-800}},
+  {t:"假裝是互動暗號",risk:true,p:0.35,s:{b:5,f:800},x:{b:-10,f:-1200}},
+  {t:"甩鍋手機",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"炎上",t:"你把弱勢議題下標成「爽」字，被罵消費苦難。",o:[
+  {t:"改標題並誠懇道歉",b:1,f:200},
+  {t:"下架重寫",b:0,f:100},
+  {t:"硬說是吸睛",risk:true,p:0.2,s:{b:2,f:300},x:{b:-15,f:-2100}} ]},
+{c:"炎上",t:"你發的童星新聞沒打馬賽克，兒少團體發聲。",o:[
+  {t:"火速下架重製＋道歉",b:-2,f:100},
+  {t:"只補馬賽克不聲明",risk:true,p:0.2,s:{b:2,f:300},x:{b:-16,f:-2300}},
+  {t:"推給後製",risk:true,p:0.15,s:{b:1,f:200},x:{b:-15,f:-2000}} ]},
+{c:"炎上",t:"你把公益募款新聞下標帶風向，被控消費善心。",o:[
+  {t:"改中立標題並道歉",b:2,f:300},
+  {t:"補上徵信資訊",b:3,f:400},
+  {t:"硬剛「我沒帶風向」",risk:true,p:0.3,s:{b:5,f:800},x:{b:-13,f:-1700}} ]},
+{c:"炎上",t:"你回覆一位質疑的網友時語氣太衝，被截圖瘋傳。",o:[
+  {t:"公開道歉並調整語氣",b:2,f:400},
+  {t:"解釋只是想幽默",risk:true,p:0.4,s:{b:6,f:1000},x:{b:-11,f:-1400}},
+  {t:"硬剛「我沒錯」",risk:true,p:0.25,s:{b:4,f:700},x:{b:-14,f:-1900}} ]},
+{c:"炎上",t:"你誤轉了一則抽獎詐騙連結到官方帳號。",o:[
+  {t:"立刻刪除＋公告防詐",b:1,f:300},
+  {t:"默默刪掉",risk:true,p:0.3,s:{b:3,f:400},x:{b:-12,f:-1500}},
+  {t:"當沒事",risk:true,p:0.15,s:{b:1,f:200},x:{b:-15,f:-2000}} ]},
+{c:"炎上",t:"你把災民痛哭的畫面做成點擊率超高的縮圖，被罵吃人血。",o:[
+  {t:"換掉縮圖並道歉",b:1,f:200},
+  {t:"解釋是呈現現場",risk:true,p:0.3,s:{b:5,f:800},x:{b:-14,f:-1900}},
+  {t:"硬留著衝點擊",risk:true,p:0.2,s:{b:3,f:500},x:{b:-16,f:-2200}} ]},
+{c:"炎上",t:"你的性別議題用詞被指不當，社群開始出征。",o:[
+  {t:"虛心道歉並修正",b:2,f:400},
+  {t:"說明原意並致歉",risk:true,p:0.4,s:{b:6,f:1000},x:{b:-13,f:-1700}},
+  {t:"硬剛「玻璃心」",risk:true,p:0.2,s:{b:3,f:500},x:{b:-16,f:-2200}} ]},
+{c:"炎上",t:"你把一句玩笑話發到官方帳號，被政治解讀成立場。",o:[
+  {t:"刪除並聲明代表個人",b:1,f:200},
+  {t:"公開道歉維持中立",b:2,f:300},
+  {t:"硬剛「不能開玩笑？」",risk:true,p:0.3,s:{b:5,f:900},x:{b:-14,f:-1900}} ]},
+
+/* -- 日常 -- */
+{c:"日常",t:"主管宣布新 KPI：每天要多生三支短影音。",o:[
+  {t:"排程穩穩做三支",b:3,f:500},
+  {t:"賭一支爆款抵三支",risk:true,p:0.4,s:{b:11,f:2000},x:{b:-9,f:-1100}},
+  {t:"回「做不完」擺爛",b:-4,f:-300} ]},
+{c:"日常",t:"粉絲數剛好突破一個整數大關，留言區在慶祝。",o:[
+  {t:"發文感謝並辦小抽獎",risk:true,p:0.6,s:{b:9,f:1600},x:{b:-4,f:-400}},
+  {t:"低調道謝",b:3,f:400},
+  {t:"忙到忘了回應",b:-2,f:-200} ]},
+{c:"日常",t:"同事臨時請假，今天要你一人顧兩個帳號。",o:[
+  {t:"冷靜排優先順序處理",b:3,f:400},
+  {t:"兩邊都衝猛發",risk:true,p:0.4,s:{b:8,f:1400},x:{b:-9,f:-1100}},
+  {t:"擺爛只顧一邊",b:-3,f:-300} ]},
+{c:"日常",t:"後台系統當機，你得暫時手動複製貼上發文。",o:[
+  {t:"小心慢慢發避免出錯",b:3,f:300},
+  {t:"照常快發賭不出包",risk:true,p:0.4,s:{b:7,f:1100},x:{b:-9,f:-1100}},
+  {t:"乾脆停更等修好",b:-3,f:-300} ]},
+{c:"日常",t:"快下班了，一則深夜突發硬是進來。",o:[
+  {t:"扛起來謹慎處理",risk:true,p:0.55,s:{b:9,f:1500},x:{b:-8,f:-900}},
+  {t:"發簡短查證快訊",b:2,f:400},
+  {t:"丟給大夜班",b:-3,f:-300} ]},
+{c:"日常",t:"鐵粉私訊揪你辦一場線下見面會。",o:[
+  {t:"預告企劃炒期待",risk:true,p:0.6,s:{b:8,f:1400},x:{b:-5,f:-500}},
+  {t:"先謝謝再評估",b:3,f:400},
+  {t:"已讀不回",b:-2,f:-200} ]},
+{c:"日常",t:"有廠商私訊丟來一個金額不錯的業配邀約。",o:[
+  {t:"接下但堅持清楚標註",b:2,f:300},
+  {t:"接了偷偷不標",risk:true,p:0.2,s:{b:5,f:900},x:{b:-16,f:-2300}},
+  {t:"婉拒維持公信力",b:3,f:500} ]},
+{c:"日常",t:"平台演算法又改版，你的短影音觸及砍半。",o:[
+  {t:"研究新規則調整",b:3,f:400},
+  {t:"狂洗版賭觸及",risk:true,p:0.35,s:{b:7,f:1100},x:{b:-9,f:-1100}},
+  {t:"擺爛等它好",b:-4,f:-500} ]},
+{c:"日常",t:"你今天靈感枯竭，盯著空白編輯框發呆。",o:[
+  {t:"翻留言找題材",b:2,f:300},
+  {t:"硬擠一個怪點子",risk:true,p:0.45,s:{b:8,f:1300},x:{b:-7,f:-800}},
+  {t:"隨便抄一篇",risk:true,p:0.25,s:{b:3,f:500},x:{b:-10,f:-1200}} ]},
+{c:"日常",t:"競爭台私下丟來挖角訊息，開的薪水很誘人。",o:[
+  {t:"專心把今天做好再說",b:3,f:400},
+  {t:"心不在焉邊聊邊發文",risk:true,p:0.3,s:{b:4,f:600},x:{b:-9,f:-1100}},
+  {t:"截圖發限動炫耀",risk:true,p:0.3,s:{b:6,f:1000},x:{b:-11,f:-1400}} ]},
+{c:"日常",t:"公司要你多開一個 Threads 新帳號分流經營。",o:[
+  {t:"規劃好定位再開",b:3,f:400},
+  {t:"馬上開大量轉貼",risk:true,p:0.35,s:{b:7,f:1200},x:{b:-8,f:-1000}},
+  {t:"拖著不想弄",b:-3,f:-200} ]},
+{c:"日常",t:"忙了一上午，終於有空喝口已經冷掉的咖啡。",o:[
+  {t:"好好休息回血",b:5,f:200},
+  {t:"邊喝邊再發一篇",risk:true,p:0.5,s:{b:7,f:1200},x:{b:-6,f:-700}},
+  {t:"滑手機看對手",b:1,f:100} ]},
+{c:"日常",t:"有粉絲送了一箱手搖飲到公司給小編打氣。",o:[
+  {t:"拍照發文真誠感謝",risk:true,p:0.7,s:{b:8,f:1300},x:{b:-3,f:-300}},
+  {t:"簡單道謝",b:3,f:400},
+  {t:"默默收下不回應",b:-2,f:-200} ]},
+
+/* ===== 擴充批次 2（衝到 300 種） ===== */
+/* -- 爭議 -- */
+{c:"爭議",t:"偶像應援新聞下，兩家粉絲為「誰才是本命」在留言區開戰。",o:[
+  {t:"置頂中立應援整理",b:2,f:400},
+  {t:"選一家按讚",risk:true,p:0.3,s:{b:7,f:1300},x:{b:-12,f:-1600}},
+  {t:"關留言冷處理",b:-4,f:100} ]},
+{c:"爭議",t:"美食報導下有人狂留言「這家超難吃踩雷」，店家私訊抗議。",o:[
+  {t:"補上店家回應平衡",b:3,f:400},
+  {t:"隱藏可能毀謗的留言",b:-2,f:100},
+  {t:"跟著吐槽那家店",risk:true,p:0.3,s:{b:6,f:1000},x:{b:-12,f:-1500}} ]},
+{c:"爭議",t:"氣候新聞下，有人留言否認暖化還嘲笑科學家。",o:[
+  {t:"附上氣象署資料澄清",b:4,f:600},
+  {t:"刪除帶風向留言",b:-2,f:200},
+  {t:"開嘲諷模式開戰",risk:true,p:0.35,s:{b:7,f:1200},x:{b:-12,f:-1500}} ]},
+{c:"爭議",t:"疫苗新聞下，留言區在瘋傳未證實的副作用個案。",o:[
+  {t:"補衛福部正式說明",b:4,f:600},
+  {t:"刪留言防擴散",b:-2,f:100},
+  {t:"放著當互動量",risk:true,p:0.25,s:{b:5,f:800},x:{b:-14,f:-1900}} ]},
+{c:"爭議",t:"身障停車格新聞下，網友開始肉搜違停車主。",o:[
+  {t:"置頂「交給警方」提醒",b:3,f:500},
+  {t:"關留言阻止肉搜",b:-3,f:200},
+  {t:"放任肉搜衝聲量",risk:true,p:0.3,s:{b:8,f:1700},x:{b:-16,f:-2300}} ]},
+{c:"爭議",t:"原住民議題新聞下出現歧視性留言，引發眾怒。",o:[
+  {t:"隱藏並檢舉",b:3,f:500},
+  {t:"官方發聲明挺多元",risk:true,p:0.5,s:{b:9,f:1600},x:{b:-9,f:-1100}},
+  {t:"保持沉默",b:-3,f:-200} ]},
+{c:"爭議",t:"醫病糾紛新聞下，網友開始獵巫點名特定醫師。",o:[
+  {t:"置頂勿未審先判提醒",b:3,f:400},
+  {t:"隱藏指名道姓留言",b:-2,f:100},
+  {t:"跟風罵那位醫師",risk:true,p:0.25,s:{b:6,f:1000},x:{b:-14,f:-1800}} ]},
+{c:"爭議",t:"低薪新聞下，資方與勞方支持者在留言區互嗆。",o:[
+  {t:"補上官方薪資統計",b:3,f:400},
+  {t:"置頂其中一方留言",risk:true,p:0.3,s:{b:7,f:1200},x:{b:-12,f:-1600}},
+  {t:"關留言",b:-4,f:0} ]},
+{c:"爭議",t:"觀光亂象新聞下，留言開始仇視特定國家遊客。",o:[
+  {t:"補上理性討論引導",b:3,f:400},
+  {t:"隱藏仇外留言",b:-2,f:100},
+  {t:"跟風酸外國遊客",risk:true,p:0.3,s:{b:6,f:1000},x:{b:-13,f:-1700}} ]},
+{c:"爭議",t:"補習班爆料新聞下，有人留言貼出疑似內部名單。",o:[
+  {t:"刪除避免散布個資",b:-2,f:200},
+  {t:"轉貼衝流量",risk:true,p:0.25,s:{b:9,f:1800},x:{b:-18,f:-2700}},
+  {t:"回覆「資料未經查證」",b:3,f:400} ]},
+{c:"爭議",t:"居住正義新聞下，網友點名特定房東公審。",o:[
+  {t:"置頂勿公審提醒",b:3,f:400},
+  {t:"隱藏指名留言",b:-2,f:100},
+  {t:"跟著罵房東",risk:true,p:0.3,s:{b:6,f:1100},x:{b:-13,f:-1700}} ]},
+{c:"爭議",t:"婚姻平權新聞湧入兩派留言激辯。",o:[
+  {t:"置頂理性討論守則",b:2,f:400},
+  {t:"官方表態挺平權",risk:true,p:0.5,s:{b:9,f:1700},x:{b:-10,f:-1300}},
+  {t:"關留言",b:-4,f:0} ]},
+{c:"爭議",t:"詐騙受害新聞下，有人留言檢討被害者「活該貪心」。",o:[
+  {t:"置頂反詐資訊導正風向",b:3,f:500},
+  {t:"隱藏檢討受害者留言",b:-2,f:100},
+  {t:"跟著酸受害者",risk:true,p:0.2,s:{b:5,f:900},x:{b:-15,f:-2100}} ]},
+{c:"爭議",t:"大停電新聞下，留言區忙著甩鍋互罵，有人 tag 台電。",o:[
+  {t:"置頂台電官方說明",b:3,f:500},
+  {t:"選一邊帶風向",risk:true,p:0.3,s:{b:7,f:1200},x:{b:-13,f:-1700}},
+  {t:"關留言",b:-4,f:0} ]},
+{c:"爭議",t:"寵物走失協尋貼文被大量不相關留言灌爆洗版。",o:[
+  {t:"置頂協尋重點並清理",b:2,f:400},
+  {t:"全部放著不管",risk:true,p:0.25,s:{b:4,f:700},x:{b:-11,f:-1400}},
+  {t:"關留言",b:-3,f:-100} ]},
+{c:"爭議",t:"網紅爭議新聞下，粉絲與黑粉在留言區大規模對戰。",o:[
+  {t:"置頂當事人正式回應",b:3,f:500},
+  {t:"選邊按讚蹭話題",risk:true,p:0.3,s:{b:8,f:1500},x:{b:-13,f:-1700}},
+  {t:"關留言冷處理",b:-4,f:0} ]},
+{c:"爭議",t:"直播打賞新聞下，有人留言爆料某主播收入來源。",o:[
+  {t:"先求證再決定報不報",b:-1,f:100},
+  {t:"直接拿來做新聞",risk:true,p:0.3,s:{b:12,f:2200},x:{b:-17,f:-2500}},
+  {t:"當八卦不處理",b:-2,f:-100} ]},
+{c:"爭議",t:"升學榜單新聞下，家長在留言區比較孩子成績引戰。",o:[
+  {t:"置頂「尊重每個選擇」",b:2,f:400},
+  {t:"隱藏炫耀式留言",b:-2,f:100},
+  {t:"跟著酸落榜的",risk:true,p:0.15,s:{b:4,f:700},x:{b:-14,f:-1900}} ]},
+{c:"爭議",t:"新住民報導下出現排外留言，引發論戰。",o:[
+  {t:"隱藏並發多元聲明",risk:true,p:0.5,s:{b:9,f:1600},x:{b:-9,f:-1100}},
+  {t:"補平衡觀點",b:3,f:400},
+  {t:"保持沉默",b:-3,f:-200} ]},
+{c:"爭議",t:"缺水新聞下，農業與工業用水支持者在留言區對槓。",o:[
+  {t:"補上水利署調度資訊",b:3,f:400},
+  {t:"置頂其中一方",risk:true,p:0.3,s:{b:6,f:1100},x:{b:-12,f:-1600}},
+  {t:"關留言",b:-4,f:0} ]},
+{c:"爭議",t:"有留言在健身新聞下推銷來路不明的增肌補品。",o:[
+  {t:"刪除並提醒勿亂買",b:3,f:400},
+  {t:"懶得管",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1900}},
+  {t:"檢舉帳號",b:1,f:200} ]},
+{c:"爭議",t:"教改新聞下，家長與老師為課綱在留言區開戰。",o:[
+  {t:"補上教育部課綱說明",b:3,f:400},
+  {t:"置頂一方論點",risk:true,p:0.3,s:{b:6,f:1100},x:{b:-12,f:-1600}},
+  {t:"關留言冷處理",b:-4,f:0} ]},
+{c:"爭議",t:"有網友在留言區散布某藝人「已簽約對手台」的未證實消息。",o:[
+  {t:"先求證再說",b:-1,f:100},
+  {t:"馬上發獨家",risk:true,p:0.3,s:{b:12,f:2200},x:{b:-17,f:-2500}},
+  {t:"刪留言",b:-2,f:-100} ]},
+{c:"爭議",t:"環保新聞下，有人留言點名特定工廠偷排放，情緒高漲。",o:[
+  {t:"補上環保署稽查資訊",b:3,f:500},
+  {t:"直接拿留言當爆料發",risk:true,p:0.3,s:{b:10,f:1900},x:{b:-16,f:-2300}},
+  {t:"隱藏未證實留言",b:-2,f:100} ]},
+{c:"爭議",t:"有留言在營養午餐新聞下貼出疑似廚房髒亂照，瘋傳中。",o:[
+  {t:"先向校方與衛生局求證",b:1,f:300},
+  {t:"馬上截圖做新聞",risk:true,p:0.3,s:{b:11,f:2100},x:{b:-16,f:-2300}},
+  {t:"當沒看到",b:-3,f:-200} ]},
+
+/* -- 諷刺 -- */
+{c:"諷刺",t:"鄉民把你一週的貼文裝訂成「小編作文簿」還打分數。",o:[
+  {t:"自嘲轉發求老師寬容",risk:true,p:0.6,s:{b:10,f:1700},x:{b:-8,f:-900}},
+  {t:"虛心檢討文筆",b:2,f:300},
+  {t:"要求下架",risk:true,p:0.15,s:{b:1,f:200},x:{b:-12,f:-1500}} ]},
+{c:"諷刺",t:"有人把你發文的口頭禪整理成「TVSB 體」教學文爆紅。",o:[
+  {t:"示範一段最純正的回敬",risk:true,p:0.6,s:{b:10,f:1700},x:{b:-8,f:-900}},
+  {t:"按讚表示風度",b:2,f:400},
+  {t:"假裝沒看到",b:-2,f:-100} ]},
+{c:"諷刺",t:"對手台把你出過的包做成「別學某台」的教材影片。",o:[
+  {t:"大方承認並說已改進",b:3,f:500},
+  {t:"幽默回「感謝宣傳」",risk:true,p:0.55,s:{b:9,f:1500},x:{b:-8,f:-900}},
+  {t:"發函抗議",risk:true,p:0.15,s:{b:1,f:200},x:{b:-12,f:-1500}} ]},
+{c:"諷刺",t:"鄉民模仿你的語氣在各大版發廢文，署名「偽小編」。",o:[
+  {t:"幽默認證「這比我還像」",risk:true,p:0.6,s:{b:9,f:1500},x:{b:-8,f:-900}},
+  {t:"澄清非官方帳號",b:2,f:300},
+  {t:"檢舉冒名",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"諷刺",t:"網友嘲你「已讀不回最快，出包最勤」做成對比圖。",o:[
+  {t:"自嘲並承諾多回留言",risk:true,p:0.55,s:{b:8,f:1300},x:{b:-7,f:-800}},
+  {t:"檢討互動習慣",b:2,f:300},
+  {t:"硬回「我很忙」",risk:true,p:0.25,s:{b:4,f:600},x:{b:-11,f:-1400}} ]},
+{c:"諷刺",t:"有人把你的英文標題做成「菜英文翻譯」系列笑料。",o:[
+  {t:"自嘲並附正確翻譯",risk:true,p:0.6,s:{b:9,f:1500},x:{b:-8,f:-900}},
+  {t:"虛心檢討用詞",b:2,f:300},
+  {t:"嘴對方雞蛋裡挑骨頭",risk:true,p:0.25,s:{b:3,f:500},x:{b:-11,f:-1400}} ]},
+{c:"諷刺",t:"國文老師在粉專糾正你引號與標點的用法。",o:[
+  {t:"留言感謝並更正",b:4,f:700},
+  {t:"狡辯網路用法沒差",risk:true,p:0.3,s:{b:4,f:600},x:{b:-11,f:-1300}},
+  {t:"不理",b:-2,f:-100} ]},
+{c:"諷刺",t:"有人把你的經典標題印成貼紙在捷運發送。",o:[
+  {t:"轉發還自己蒐集一套",risk:true,p:0.6,s:{b:9,f:1500},x:{b:-7,f:-800}},
+  {t:"按讚表示風度",b:2,f:400},
+  {t:"覺得被消費不回應",b:-2,f:-100} ]},
+{c:"諷刺",t:"研究生把你們的農場標題寫進「媒體亂象」論文被報導。",o:[
+  {t:"大方回應並談改進",b:3,f:500},
+  {t:"幽默說「上學術殿堂了」",risk:true,p:0.5,s:{b:8,f:1300},x:{b:-9,f:-1100}},
+  {t:"抗議被點名",risk:true,p:0.15,s:{b:1,f:200},x:{b:-12,f:-1500}} ]},
+{c:"諷刺",t:"有迷因帳號做了「這是新聞還是廢文」的你我猜測驗。",o:[
+  {t:"自己也玩還公布答案",risk:true,p:0.6,s:{b:9,f:1500},x:{b:-8,f:-900}},
+  {t:"檢討內容品質",b:3,f:400},
+  {t:"要求下架",risk:true,p:0.15,s:{b:1,f:200},x:{b:-12,f:-1500}} ]},
+{c:"諷刺",t:"KOL 在直播裡逐條嘲笑你今天的貼文。",o:[
+  {t:"幽默回應還感謝流量",risk:true,p:0.55,s:{b:9,f:1500},x:{b:-9,f:-1100}},
+  {t:"列出查證過程證明專業",b:3,f:400},
+  {t:"去直播間開戰",risk:true,p:0.25,s:{b:4,f:700},x:{b:-14,f:-1800}} ]},
+{c:"諷刺",t:"有人把你的即時新聞做成「本週最瞎」網路票選。",o:[
+  {t:"自嘲拉票衝到第一",risk:true,p:0.55,s:{b:9,f:1500},x:{b:-8,f:-900}},
+  {t:"虛心檢討選題",b:2,f:300},
+  {t:"假裝沒看到",b:-2,f:-100} ]},
+{c:"諷刺",t:"網友發現你配圖是 AI 生成、人物有六根手指，做成梗。",o:[
+  {t:"換正常圖＋自嘲手滑",risk:true,p:0.6,s:{b:8,f:1300},x:{b:-6,f:-700}},
+  {t:"默默換掉圖",b:1,f:200},
+  {t:"硬說是藝術風格",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"諷刺",t:"有人把你和對手台的標題做成「找不同」遊戲爆紅。",o:[
+  {t:"跟著玩還自爆內幕",risk:true,p:0.55,s:{b:9,f:1500},x:{b:-8,f:-900}},
+  {t:"按讚帶過",b:2,f:400},
+  {t:"抗議被消費",risk:true,p:0.15,s:{b:1,f:200},x:{b:-11,f:-1400}} ]},
+{c:"諷刺",t:"粉絲把你的崩潰語錄譜成一首歌還上架串流。",o:[
+  {t:"轉發當片頭曲",risk:true,p:0.65,s:{b:10,f:1700},x:{b:-6,f:-700}},
+  {t:"真心感謝粉絲",b:4,f:600},
+  {t:"覺得被玩不回應",b:-2,f:-100} ]},
+{c:"諷刺",t:"有人嘲你每則都自稱「全網瘋傳」，根本沒人轉。",o:[
+  {t:"自嘲改掉浮誇用語",risk:true,p:0.55,s:{b:8,f:1300},x:{b:-6,f:-700}},
+  {t:"檢討標題習慣",b:2,f:300},
+  {t:"硬說真的有人傳",risk:true,p:0.25,s:{b:3,f:500},x:{b:-10,f:-1200}} ]},
+{c:"諷刺",t:"遊戲玩家把你做成一個只會出包的 NPC 角色。",o:[
+  {t:"幽默認領這個角色",risk:true,p:0.6,s:{b:9,f:1500},x:{b:-7,f:-800}},
+  {t:"按讚表示大器",b:2,f:400},
+  {t:"要求下架",risk:true,p:0.15,s:{b:1,f:200},x:{b:-11,f:-1400}} ]},
+{c:"諷刺",t:"國中生的報告把你們當「假新聞辨識」反例，上了地方版。",o:[
+  {t:"大方回應並談媒體識讀",b:3,f:500},
+  {t:"虛心檢討",b:2,f:300},
+  {t:"抗議被當負面教材",risk:true,p:0.15,s:{b:1,f:200},x:{b:-12,f:-1500}} ]},
+{c:"諷刺",t:"對手台小編發文「我們不跟風某台」結果被抓到也跟了。",o:[
+  {t:"幽默回「互相漏氣求進步」",risk:true,p:0.55,s:{b:9,f:1500},x:{b:-8,f:-900}},
+  {t:"大方不回應",b:1,f:200},
+  {t:"趁機狠酸對手",risk:true,p:0.3,s:{b:5,f:900},x:{b:-12,f:-1500}} ]},
+{c:"諷刺",t:"名嘴把「現在小編都用 AI」當成節目主題講了一集。",o:[
+  {t:"發幕後證明是真人手作",risk:true,p:0.5,s:{b:8,f:1300},x:{b:-9,f:-1100}},
+  {t:"溫和回應",b:3,f:400},
+  {t:"開嗆名嘴",risk:true,p:0.3,s:{b:6,f:1000},x:{b:-13,f:-1600}} ]},
+
+/* -- 誤 -- */
+{c:"誤",t:"你把氣溫 30 度打成 300 度，網友說地球要融化了。",o:[
+  {t:"更正並自嘲手滑",risk:true,p:0.6,s:{b:6,f:1000},x:{b:-5,f:-600}},
+  {t:"安靜訂正",b:0,f:100},
+  {t:"硬說是體感溫度",risk:true,p:0.2,s:{b:2,f:300},x:{b:-10,f:-1200}} ]},
+{c:"誤",t:"你把某市人口少打一個萬字，瞬間變小村莊。",o:[
+  {t:"立刻更正數字",b:1,f:200},
+  {t:"偷改內文",risk:true,p:0.3,s:{b:3,f:400},x:{b:-10,f:-1200}},
+  {t:"當沒事",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"國際新聞你把國旗配錯國家，被外交專頁點名。",o:[
+  {t:"換正確國旗並道歉",b:1,f:300},
+  {t:"默默換圖",risk:true,p:0.3,s:{b:3,f:400},x:{b:-12,f:-1500}},
+  {t:"硬說兩國很像",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"誤",t:"字幕把行政區名唸錯又上錯字，雙重出包。",o:[
+  {t:"重製字幕並致歉",b:1,f:200},
+  {t:"留言置頂更正",b:2,f:300},
+  {t:"當沒人在意",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"財經新聞你把貨幣符號標錯，台幣變成美元。",o:[
+  {t:"更正並附匯率說明",b:2,f:300},
+  {t:"硬拗讀者自己換算",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}},
+  {t:"刪文重發",b:0,f:100} ]},
+{c:"誤",t:"你把直播精華剪錯秒數，漏掉了最關鍵那句。",o:[
+  {t:"重剪正確版補上",b:1,f:200},
+  {t:"留言補完整連結",b:2,f:300},
+  {t:"當作沒差",risk:true,p:0.2,s:{b:2,f:300},x:{b:-10,f:-1200}} ]},
+{c:"誤",t:"頒獎新聞你把得獎者名字打錯一個字，粉絲暴動。",o:[
+  {t:"秒更正並恭喜",b:2,f:400},
+  {t:"偷改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-10,f:-1200}},
+  {t:"硬說是別名",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你把受訪者所屬公司標錯，對方公司來訊抗議。",o:[
+  {t:"立即更正並致歉",b:2,f:300},
+  {t:"默默改掉",risk:true,p:0.3,s:{b:3,f:400},x:{b:-10,f:-1300}},
+  {t:"已讀不回",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你把「景氣增加」打成「景氣減少」，意思完全相反。",o:[
+  {t:"更正並附主計總處資料",b:2,f:300},
+  {t:"偷改數字",risk:true,p:0.3,s:{b:3,f:400},x:{b:-12,f:-1500}},
+  {t:"硬拗看角度",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"誤",t:"你把預告片畫面當成正片發布，被劇迷抓包。",o:[
+  {t:"更正並標註預告",b:1,f:200},
+  {t:"改成「搶先看」補救",risk:true,p:0.4,s:{b:4,f:600},x:{b:-9,f:-1100}},
+  {t:"硬掛正片",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你放的地圖南北顛倒，網友問「台灣倒過來了？」",o:[
+  {t:"換正確地圖＋自嘲",risk:true,p:0.6,s:{b:6,f:1000},x:{b:-5,f:-600}},
+  {t:"安靜換圖",b:0,f:100},
+  {t:"硬說是特殊視角",risk:true,p:0.2,s:{b:2,f:300},x:{b:-10,f:-1200}} ]},
+{c:"誤",t:"你把名人的過世年份寫錯，被家屬發現。",o:[
+  {t:"立刻更正並致歉",b:1,f:200},
+  {t:"默默改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-12,f:-1600}},
+  {t:"當沒事",risk:true,p:0.15,s:{b:1,f:200},x:{b:-13,f:-1700}} ]},
+{c:"誤",t:"你把英里直接當公里報，距離差了一大截。",o:[
+  {t:"更正換算並說明",b:2,f:300},
+  {t:"硬拗差不多",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}},
+  {t:"刪文",b:0,f:100} ]},
+{c:"誤",t:"你誤把「活動暫緩」寫成「活動取消」，民眾白跑一趟。",o:[
+  {t:"火速更正並道歉",b:0,f:200},
+  {t:"偷改內文",risk:true,p:0.3,s:{b:3,f:400},x:{b:-13,f:-1700}},
+  {t:"甩鍋主辦單位",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"誤",t:"標題寫「破百萬」內文卻是「破十萬」，數字對不上。",o:[
+  {t:"統一數字並更正",b:1,f:200},
+  {t:"偷改標題",risk:true,p:0.3,s:{b:3,f:400},x:{b:-11,f:-1400}},
+  {t:"硬拗兩個都對",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你把圖表的 Y 軸單位標錯，趨勢看起來超誇張。",o:[
+  {t:"換正確圖表並致歉",b:2,f:300},
+  {t:"撤圖裝沒事",risk:true,p:0.25,s:{b:2,f:300},x:{b:-11,f:-1400}},
+  {t:"硬說強調效果",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你把兩國領袖的名字互換了，國際版鬧笑話。",o:[
+  {t:"更正並道歉",b:1,f:200},
+  {t:"默默改掉",risk:true,p:0.3,s:{b:3,f:400},x:{b:-11,f:-1400}},
+  {t:"硬拗手滑",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你發的新聞裡誤植了當事人的真實電話號碼。",o:[
+  {t:"火速下架重發＋道歉",b:-1,f:100},
+  {t:"只刪號碼不聲明",risk:true,p:0.2,s:{b:2,f:300},x:{b:-16,f:-2200}},
+  {t:"推給資料來源",risk:true,p:0.15,s:{b:1,f:200},x:{b:-14,f:-1800}} ]},
+{c:"誤",t:"你把活動地點寫錯區，害粉絲跑錯場。",o:[
+  {t:"更正並道歉補償",b:1,f:300},
+  {t:"留言置頂正確地點",b:2,f:300},
+  {t:"當沒人會當真",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你把「嫌疑人」直接寫出全名，還沒起訴就實名。",o:[
+  {t:"立刻改回代稱並道歉",b:-1,f:200},
+  {t:"硬說有新聞價值",risk:true,p:0.2,s:{b:2,f:300},x:{b:-16,f:-2300}},
+  {t:"刪文消失",risk:true,p:0.2,s:{b:2,f:300},x:{b:-13,f:-1700}} ]},
+{c:"誤",t:"你上傳的影片比例沒調，人物全被壓扁。",o:[
+  {t:"重新上傳正確比例",b:1,f:200},
+  {t:"自嘲「減肥成功」",risk:true,p:0.55,s:{b:6,f:1000},x:{b:-5,f:-600}},
+  {t:"硬留著",risk:true,p:0.15,s:{b:1,f:200},x:{b:-9,f:-1100}} ]},
+{c:"誤",t:"你把比賽的主客場搞反，寫成在對手主場開打。",o:[
+  {t:"更正並附賽程",b:1,f:300},
+  {t:"偷改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-10,f:-1300}},
+  {t:"硬拗場地有變",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你把「截止」打成「開始」，報名時間寫反了。",o:[
+  {t:"立刻更正並道歉",b:0,f:200},
+  {t:"偷改內文",risk:true,p:0.3,s:{b:3,f:400},x:{b:-11,f:-1400}},
+  {t:"當沒事",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"誤",t:"你引用的民調把兩個陣營的數字放反了。",o:[
+  {t:"更正並附原始民調",b:2,f:300},
+  {t:"硬拗是製表誤差",risk:true,p:0.2,s:{b:2,f:300},x:{b:-13,f:-1700}},
+  {t:"刪文",risk:true,p:0.25,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你把兩支分隊的隊名弄混，戰報整篇錯置。",o:[
+  {t:"重寫並致歉",b:1,f:200},
+  {t:"默默改掉",risk:true,p:0.3,s:{b:3,f:400},x:{b:-10,f:-1200}},
+  {t:"硬拗讀者看得懂",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+
+/* -- 炎上 -- */
+{c:"炎上",t:"你把一張搞笑迷因配到重大死傷新聞上，被罵沒同理心。",o:[
+  {t:"立刻換圖＋誠懇道歉",b:-1,f:200},
+  {t:"解釋只是手滑選錯",risk:true,p:0.35,s:{b:5,f:800},x:{b:-14,f:-1900}},
+  {t:"硬留著",risk:true,p:0.15,s:{b:2,f:300},x:{b:-16,f:-2200}} ]},
+{c:"炎上",t:"你拿災難新聞當背景辦抽獎，被控消費苦難。",o:[
+  {t:"立刻取消並道歉",b:-1,f:200},
+  {t:"改成捐款活動補救",risk:true,p:0.45,s:{b:7,f:1200},x:{b:-11,f:-1400}},
+  {t:"硬說只是促互動",risk:true,p:0.2,s:{b:2,f:300},x:{b:-16,f:-2200}} ]},
+{c:"炎上",t:"你的梗踩到特定族群痛點，相關團體發聲明抗議。",o:[
+  {t:"虛心道歉並下架",b:1,f:200},
+  {t:"說明原意並致歉",risk:true,p:0.4,s:{b:6,f:1000},x:{b:-13,f:-1700}},
+  {t:"硬剛「開不起玩笑」",risk:true,p:0.2,s:{b:3,f:500},x:{b:-16,f:-2200}} ]},
+{c:"炎上",t:"你的標題被指物化女性，社群開始出征。",o:[
+  {t:"改標題並誠懇道歉",b:1,f:200},
+  {t:"下架重寫",b:0,f:100},
+  {t:"硬說是吸睛",risk:true,p:0.2,s:{b:2,f:300},x:{b:-16,f:-2200}} ]},
+{c:"炎上",t:"你在影片裡模仿某地方口音被罵歧視。",o:[
+  {t:"道歉並剪掉片段",b:1,f:200},
+  {t:"解釋無惡意",risk:true,p:0.35,s:{b:5,f:800},x:{b:-13,f:-1700}},
+  {t:"硬剛玻璃心",risk:true,p:0.2,s:{b:3,f:500},x:{b:-15,f:-2100}} ]},
+{c:"炎上",t:"你發的自傷新聞沒附上求助專線，被輿論批評。",o:[
+  {t:"立刻補上求助資訊並致歉",b:1,f:300},
+  {t:"補一句聯絡方式帶過",risk:true,p:0.4,s:{b:4,f:600},x:{b:-11,f:-1400}},
+  {t:"當沒事",risk:true,p:0.15,s:{b:1,f:200},x:{b:-16,f:-2200}} ]},
+{c:"炎上",t:"你用了病患照片卻沒取得同意，當事人提告。",o:[
+  {t:"下架並公開致歉",b:-1,f:200},
+  {t:"打馬賽克後重發",risk:true,p:0.4,s:{b:4,f:700},x:{b:-13,f:-1700}},
+  {t:"硬說是公共利益",risk:true,p:0.2,s:{b:2,f:300},x:{b:-16,f:-2300}} ]},
+{c:"炎上",t:"你不小心把內部群組的對話截圖發到官方帳號。",o:[
+  {t:"秒刪＋幽默道歉",risk:true,p:0.5,s:{b:6,f:900},x:{b:-9,f:-1100}},
+  {t:"推給手機自動發",risk:true,p:0.25,s:{b:4,f:600},x:{b:-13,f:-1700}},
+  {t:"當沒事",risk:true,p:0.2,s:{b:2,f:300},x:{b:-13,f:-1700}} ]},
+{c:"炎上",t:"你的封面圖誤放成對手台的 logo，被全網笑翻。",o:[
+  {t:"換圖＋自嘲打工仔的日常",risk:true,p:0.55,s:{b:7,f:1100},x:{b:-6,f:-700}},
+  {t:"默默換掉",b:0,f:100},
+  {t:"硬說是致敬",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"炎上",t:"你的抽獎機制被網友質疑內定，截圖瘋傳。",o:[
+  {t:"公開抽獎過程並道歉",b:2,f:300},
+  {t:"重抽一次昭公信",risk:true,p:0.5,s:{b:7,f:1200},x:{b:-9,f:-1100}},
+  {t:"硬說公正",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1900}} ]},
+{c:"炎上",t:"你在直播中失言，脫口說了不該說的評論。",o:[
+  {t:"當場道歉並收回",b:1,f:200},
+  {t:"事後發文澄清",risk:true,p:0.4,s:{b:6,f:1000},x:{b:-12,f:-1500}},
+  {t:"硬拗被斷章取義",risk:true,p:0.25,s:{b:4,f:700},x:{b:-14,f:-1900}} ]},
+{c:"炎上",t:"你回覆網友時用錯稱呼，冒犯了對方性別認同。",o:[
+  {t:"立刻道歉並改正",b:2,f:400},
+  {t:"解釋不熟悉",risk:true,p:0.4,s:{b:5,f:800},x:{b:-11,f:-1400}},
+  {t:"硬剛「哪有差」",risk:true,p:0.2,s:{b:3,f:500},x:{b:-15,f:-2000}} ]},
+{c:"炎上",t:"你蹭明星喪事順便在貼文裡帶了商品連結，被罵發死人財。",o:[
+  {t:"立刻撤連結並道歉",b:-1,f:200},
+  {t:"解釋是誤植",risk:true,p:0.3,s:{b:4,f:700},x:{b:-14,f:-1900}},
+  {t:"硬留著",risk:true,p:0.15,s:{b:2,f:300},x:{b:-17,f:-2400}} ]},
+{c:"炎上",t:"你用 AI 換臉把政治人物做成搞笑影片，被控假訊息。",o:[
+  {t:"下架並標註為二創惡搞",b:0,f:200},
+  {t:"補警語「非真實」",risk:true,p:0.4,s:{b:5,f:800},x:{b:-12,f:-1500}},
+  {t:"硬說大家看得出來",risk:true,p:0.2,s:{b:2,f:300},x:{b:-15,f:-2000}} ]},
+{c:"炎上",t:"你的標題誤導股民以為某股要漲，散戶套牢來罵。",o:[
+  {t:"更正標題並附風險提醒",b:1,f:200},
+  {t:"補一句「投資有風險」",risk:true,p:0.35,s:{b:4,f:700},x:{b:-13,f:-1700}},
+  {t:"硬說沒叫你買",risk:true,p:0.2,s:{b:3,f:500},x:{b:-14,f:-1900}} ]},
+{c:"炎上",t:"你把一則公益報導偷偷夾帶業配，被眼尖網友抓包。",o:[
+  {t:"坦承並補標合作揭露",risk:true,p:0.5,s:{b:6,f:900},x:{b:-10,f:-1200}},
+  {t:"下架重發分開處理",b:1,f:200},
+  {t:"硬說沒有業配",risk:true,p:0.2,s:{b:2,f:300},x:{b:-16,f:-2200}} ]},
+{c:"炎上",t:"你手滑誤刪了一則正在衝的募款貼文，善心人士氣炸。",o:[
+  {t:"重發並公開說明失誤",risk:true,p:0.5,s:{b:6,f:900},x:{b:-8,f:-1000}},
+  {t:"低調重發裝沒事",risk:true,p:0.3,s:{b:3,f:400},x:{b:-12,f:-1500}},
+  {t:"推給系統",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"炎上",t:"你回了一位認真提問的網友「你很閒喔」，被截圖炎上。",o:[
+  {t:"公開道歉並正經回答",b:2,f:400},
+  {t:"解釋只是開玩笑",risk:true,p:0.35,s:{b:5,f:800},x:{b:-12,f:-1500}},
+  {t:"硬剛「不然勒」",risk:true,p:0.2,s:{b:3,f:500},x:{b:-15,f:-2000}} ]},
+{c:"炎上",t:"你的政治哏踩到敏感紅線，兩岸網友都來出征。",o:[
+  {t:"下架並發中立聲明",b:1,f:200},
+  {t:"補充說明立場",risk:true,p:0.3,s:{b:5,f:800},x:{b:-14,f:-1900}},
+  {t:"硬剛言論自由",risk:true,p:0.2,s:{b:3,f:500},x:{b:-16,f:-2200}} ]},
+{c:"炎上",t:"你把災區現場寫得像觀光景點介紹，被災民痛批。",o:[
+  {t:"改寫並誠懇道歉",b:1,f:200},
+  {t:"解釋想呈現重建",risk:true,p:0.35,s:{b:5,f:800},x:{b:-13,f:-1700}},
+  {t:"硬留著",risk:true,p:0.15,s:{b:2,f:300},x:{b:-16,f:-2200}} ]},
+{c:"炎上",t:"你用了攝影師的得獎作品當封面沒標出處，對方公開求償。",o:[
+  {t:"下架並聯繫授權道歉",b:1,f:200},
+  {t:"換自家素材",b:0,f:100},
+  {t:"硬說合理使用",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1900}} ]},
+{c:"炎上",t:"你的即時快訊被控製造恐慌，官方急發聲明澄清。",o:[
+  {t:"更新內文並引述官方",b:3,f:500},
+  {t:"補一句提醒民眾",risk:true,p:0.35,s:{b:4,f:700},x:{b:-12,f:-1500}},
+  {t:"硬說只是示警",risk:true,p:0.2,s:{b:2,f:300},x:{b:-13,f:-1700}} ]},
+{c:"炎上",t:"你轉發一段未成年受害者的影像沒處理，被嚴正抗議。",o:[
+  {t:"火速下架＋致歉",b:-2,f:100},
+  {t:"補打馬賽克不聲明",risk:true,p:0.2,s:{b:2,f:300},x:{b:-16,f:-2300}},
+  {t:"推給來源",risk:true,p:0.15,s:{b:1,f:200},x:{b:-15,f:-2000}} ]},
+{c:"炎上",t:"你把宗教儀式當成笑點做成短影音，信眾集體抗議。",o:[
+  {t:"下架並尊重道歉",b:0,f:200},
+  {t:"解釋無冒犯之意",risk:true,p:0.35,s:{b:5,f:800},x:{b:-13,f:-1700}},
+  {t:"硬留著",risk:true,p:0.15,s:{b:2,f:300},x:{b:-15,f:-2100}} ]},
+{c:"炎上",t:"你消費一位剛退休的運動員做哏，粉絲灌爆抗議。",o:[
+  {t:"道歉並改成致敬內容",b:1,f:200},
+  {t:"解釋是善意玩笑",risk:true,p:0.35,s:{b:5,f:800},x:{b:-12,f:-1500}},
+  {t:"硬剛",risk:true,p:0.2,s:{b:3,f:500},x:{b:-14,f:-1900}} ]},
+
+/* -- 日常 -- */
+{c:"日常",t:"主管誇你最近表現好，問你要不要帶一個新人。",o:[
+  {t:"答應並認真帶",b:3,f:500},
+  {t:"趁機教新人衝量",risk:true,p:0.45,s:{b:8,f:1400},x:{b:-7,f:-800}},
+  {t:"推說沒空",b:-2,f:-100} ]},
+{c:"日常",t:"鐵粉自費做了一面應援看板放在公司樓下。",o:[
+  {t:"拍照發文真誠致謝",risk:true,p:0.7,s:{b:8,f:1300},x:{b:-3,f:-300}},
+  {t:"低調道謝",b:3,f:400},
+  {t:"假裝沒看到",b:-2,f:-200} ]},
+{c:"日常",t:"你卡在創作瓶頸，隔壁同事給了一個方向。",o:[
+  {t:"採納並一起發想",b:3,f:400},
+  {t:"硬要照自己的怪點子走",risk:true,p:0.45,s:{b:8,f:1300},x:{b:-7,f:-800}},
+  {t:"兩個都不用擺爛",b:-3,f:-300} ]},
+{c:"日常",t:"公司尾牙要你剪一支年度回顧影片。",o:[
+  {t:"用心剪出感動版",risk:true,p:0.6,s:{b:9,f:1500},x:{b:-5,f:-500}},
+  {t:"穩穩交一支堪用的",b:3,f:400},
+  {t:"隨便拼一拼交差",risk:true,p:0.25,s:{b:3,f:500},x:{b:-9,f:-1100}} ]},
+{c:"日常",t:"連假前最後一天，大家都想早點收工。",o:[
+  {t:"撐住把當班做完",b:3,f:400},
+  {t:"賭一篇連假哏爆款",risk:true,p:0.45,s:{b:9,f:1600},x:{b:-8,f:-900}},
+  {t:"提早開溜",b:-3,f:-300} ]},
+{c:"日常",t:"平台頒給你官方認證勳章，留言區都在恭喜。",o:[
+  {t:"發文感謝粉絲一路相挺",risk:true,p:0.65,s:{b:8,f:1300},x:{b:-3,f:-300}},
+  {t:"低調道謝",b:3,f:400},
+  {t:"沒空理",b:-2,f:-200} ]},
+{c:"日常",t:"有 Podcast 邀你上節目聊小編甘苦談。",o:[
+  {t:"準備好料大方分享",risk:true,p:0.6,s:{b:9,f:1500},x:{b:-5,f:-500}},
+  {t:"謹慎答應先報備主管",b:2,f:300},
+  {t:"婉拒怕出錯",b:-1,f:0} ]},
+{c:"日常",t:"新同事問你「爆款標題到底怎麼寫？」",o:[
+  {t:"認真傳授查證＋下標心法",b:3,f:400},
+  {t:"教他賭聳動標",risk:true,p:0.4,s:{b:7,f:1200},x:{b:-8,f:-1000}},
+  {t:"敷衍帶過",b:-2,f:-100} ]},
+{c:"日常",t:"一早平台大改版，整個後台介面都不一樣了。",o:[
+  {t:"先花時間摸熟再發",b:3,f:300},
+  {t:"硬著頭皮照發",risk:true,p:0.4,s:{b:6,f:1000},x:{b:-9,f:-1100}},
+  {t:"停更等熟悉",b:-3,f:-300} ]},
+{c:"日常",t:"粉絲做了超精美的二創送你，你看了很感動。",o:[
+  {t:"置頂分享並致謝",risk:true,p:0.65,s:{b:8,f:1300},x:{b:-3,f:-300}},
+  {t:"真心留言感謝",b:3,f:400},
+  {t:"忙到忘了回",b:-2,f:-200} ]},
+{c:"日常",t:"主管丟給你一個很難處理的題目說「當練功」。",o:[
+  {t:"冷靜拆解認真做",risk:true,p:0.55,s:{b:9,f:1500},x:{b:-7,f:-800}},
+  {t:"求穩做保守版",b:2,f:300},
+  {t:"擺爛丟回去",b:-3,f:-300} ]},
+{c:"日常",t:"午休同事揪你一起訂便當放鬆一下。",o:[
+  {t:"好好吃飯回血",b:5,f:200},
+  {t:"邊吃邊盯即時再發一篇",risk:true,p:0.5,s:{b:7,f:1200},x:{b:-6,f:-700}},
+  {t:"不吃硬撐工作",b:-2,f:-100} ]},
+{c:"日常",t:"你收到一封情緒勒索的黑函，叫你照他說的報。",o:[
+  {t:"冷靜存證不受影響",b:3,f:400},
+  {t:"氣到發文公審對方",risk:true,p:0.35,s:{b:6,f:1000},x:{b:-11,f:-1400}},
+  {t:"照對方要求做",b:-4,f:-500} ]},
+{c:"日常",t:"互動數字破了個人紀錄，整個團隊都在歡呼。",o:[
+  {t:"趁勢規劃下一波企劃",risk:true,p:0.6,s:{b:9,f:1500},x:{b:-5,f:-500}},
+  {t:"穩穩守成",b:4,f:600},
+  {t:"得意忘形亂發",risk:true,p:0.25,s:{b:4,f:700},x:{b:-9,f:-1100}} ]},
+{c:"日常",t:"下班前主管問你今天學到什麼，想聽真心話。",o:[
+  {t:"誠懇檢討今天的得失",b:4,f:400},
+  {t:"只報喜不報憂",risk:true,p:0.35,s:{b:5,f:800},x:{b:-8,f:-900}},
+  {t:"隨便敷衍",b:-2,f:-100} ]},
+
+/* ===== 魔王級：高難度兩難（每個選項都有代價） ===== */
+{c:"炎上",hard:true,t:"重量級人物深夜猝逝的消息瘋傳，各台都在搶，但官方還沒證實。發，可能誤報；不發，獨家就飛了。",o:[
+  {t:"等官方證實再發（掉獨家）",b:-6,f:300,hint:"穩，但聲量重傷"},
+  {t:"搶快發快訊賭正確",risk:true,p:0.2,s:{b:14,f:3000},x:{b:-24,f:-3600},hint:"賭對封神、賭錯直接完蛋"},
+  {t:"發「傳聞待證實」模糊處理",risk:true,p:0.3,s:{b:8,f:1600},x:{b:-18,f:-2600}} ]},
+{c:"爭議",hard:true,t:"主管下令：配合大業主刪光所有負評，否則這個月換你被檢討。",o:[
+  {t:"拒絕，守住公信力",b:-7,f:600,hint:"得罪主管、聲量大跌但贏信任"},
+  {t:"照做全刪",risk:true,p:0.18,s:{b:6,f:900},x:{b:-22,f:-3200},hint:"被抓到=業配醜聞"},
+  {t:"折衷只隱藏最兇的幾則",risk:true,p:0.3,s:{b:4,f:600},x:{b:-16,f:-2200}} ]},
+{c:"誤",hard:true,t:"你發現昨天的頭條數據全錯，已被上百家引用。現在更正等於公開自爆。",o:[
+  {t:"大動作公開更正並道歉",b:-5,f:500,hint:"誠實止血，聲量先痛"},
+  {t:"偷偷修掉不聲明",risk:true,p:0.18,s:{b:4,f:600},x:{b:-23,f:-3300},hint:"被對照舊截圖=大災難"},
+  {t:"硬拗兩種算法都成立",risk:true,p:0.22,s:{b:6,f:1000},x:{b:-20,f:-2900}} ]},
+{c:"炎上",hard:true,t:"你一則貼文讓兩大粉絲群互相出征，站哪邊都會得罪一半的人。",o:[
+  {t:"下架貼文並致歉降溫",b:-6,f:200},
+  {t:"發極度中立的聲明",risk:true,p:0.32,s:{b:10,f:1900},x:{b:-19,f:-2700},hint:"兩邊不討好的風險"},
+  {t:"火上加油蹭話題聲量",risk:true,p:0.18,s:{b:13,f:2600},x:{b:-22,f:-3200}} ]},
+{c:"爭議",hard:true,t:"有人在直播中自殘並點名要你們連線報導，收視會爆，但這是人命。",o:[
+  {t:"立刻通報警方與專線、不連線",b:-4,f:800,hint:"正確但沒收視紅利"},
+  {t:"連線直播衝收視",risk:true,p:0.12,s:{b:12,f:2400},x:{b:-26,f:-3800},hint:"踩線＝萬劫不復"},
+  {t:"當沒看到不處理",risk:true,p:0.2,s:{b:3,f:400},x:{b:-20,f:-2800}} ]},
+{c:"誤",hard:true,t:"跑馬燈打錯一個字，變成嚴重政治失言，已經播出去三分鐘了。",o:[
+  {t:"立刻更正並鄭重道歉",b:-5,f:400},
+  {t:"甩鍋給工程部",risk:true,p:0.18,s:{b:4,f:600},x:{b:-21,f:-3000}},
+  {t:"硬拗是觀眾看錯",risk:true,p:0.15,s:{b:3,f:500},x:{b:-22,f:-3100}} ]},
+{c:"炎上",hard:true,t:"你的獨家被對手指控是抄他們的、還倒打一耙說你造假，雙方律師都進場了。",o:[
+  {t:"公開完整採訪證據自清",risk:true,p:0.4,s:{b:12,f:2200},x:{b:-18,f:-2500},hint:"有料就翻盤，沒料更慘"},
+  {t:"低調發聲明冷處理",b:-6,f:300},
+  {t:"開戰互揭瘡疤",risk:true,p:0.2,s:{b:10,f:2000},x:{b:-22,f:-3200}} ]},
+{c:"日常",hard:true,t:"今天最後一題：主管說 KPI 就差臨門一腳，要你賭最後一把大的。",o:[
+  {t:"穩穩收尾不冒險",b:-4,f:200,hint:"保平安但沒驚喜"},
+  {t:"賭一支爭議大爆款",risk:true,p:0.25,s:{b:14,f:2800},x:{b:-20,f:-2900}},
+  {t:"硬壓一條未查證的猛料",risk:true,p:0.15,s:{b:13,f:2600},x:{b:-23,f:-3300}} ]},
+
+/* ===== 擴充批次 3（衝到 500 種） ===== */
+/* -- 爭議 -- */
+{c:"爭議",t:"電競戰隊輸球新聞下，粉絲開始砲轟教練要他下台。",o:[
+  {t:"置頂戰隊官方聲明",b:2,f:400},
+  {t:"跟風酸教練",risk:true,p:0.3,s:{b:6,f:1100},x:{b:-12,f:-1600}},
+  {t:"關留言冷處理",b:-4,f:0} ]},
+{c:"爭議",t:"有網友在車禍新聞下貼出行車紀錄器並公審用路人。",o:[
+  {t:"打碼並提醒勿公審",b:2,f:300},
+  {t:"原影片直接發新聞",risk:true,p:0.3,s:{b:10,f:1900},x:{b:-16,f:-2300}},
+  {t:"刪影片",b:-3,f:-100} ]},
+{c:"爭議",t:"素食與葷食網友在美食貼文下為「該不該吃肉」吵成一團。",o:[
+  {t:"置頂互相尊重提醒",b:2,f:400},
+  {t:"選一邊按讚",risk:true,p:0.3,s:{b:6,f:1000},x:{b:-11,f:-1500}},
+  {t:"關留言",b:-4,f:0} ]},
+{c:"爭議",t:"有人在長照新聞下留言批評政府補助不足，情緒激動。",o:[
+  {t:"補上衛福部補助資訊",b:3,f:500},
+  {t:"跟著罵政府",risk:true,p:0.3,s:{b:6,f:1100},x:{b:-11,f:-1500}},
+  {t:"不理",b:-3,f:-100} ]},
+{c:"爭議",t:"有網友在你貼文下帶風向說某超商食物中毒，尚未證實。",o:[
+  {t:"先向衛生局查證",b:1,f:200},
+  {t:"馬上發新聞",risk:true,p:0.3,s:{b:11,f:2000},x:{b:-17,f:-2400}},
+  {t:"刪留言",b:-2,f:-100} ]},
+{c:"爭議",t:"廢死與反廢死網友在重大刑案新聞下激烈對戰。",o:[
+  {t:"置頂理性討論守則",b:2,f:400},
+  {t:"選邊帶風向",risk:true,p:0.3,s:{b:7,f:1200},x:{b:-13,f:-1700}},
+  {t:"關留言",b:-4,f:0} ]},
+{c:"爭議",t:"有人在你貼文下爆料某餐廳用回收油，附上模糊影片。",o:[
+  {t:"向店家與衛生局求證",b:1,f:200},
+  {t:"直接拿影片發新聞",risk:true,p:0.3,s:{b:10,f:1900},x:{b:-16,f:-2300}},
+  {t:"當沒看到",b:-3,f:-200} ]},
+{c:"爭議",t:"有網友在你貼文下為孩子的過動症被歧視發聲，引發論戰。",o:[
+  {t:"置頂衛教資訊導正",b:3,f:500},
+  {t:"隱藏歧視留言",b:-2,f:100},
+  {t:"跟風開玩笑",risk:true,p:0.2,s:{b:4,f:700},x:{b:-14,f:-1900}} ]},
+{c:"爭議",t:"某 YouTuber 在你貼文下宣傳他的爭議募資案，粉絲湧入。",o:[
+  {t:"保持中立不背書",b:2,f:300},
+  {t:"幫忙推一把蹭流量",risk:true,p:0.25,s:{b:6,f:1100},x:{b:-13,f:-1700}},
+  {t:"刪除廣告留言",b:-2,f:100} ]},
+{c:"爭議",t:"有人在校園霸凌新聞下肉搜加害學生，開始出征。",o:[
+  {t:"置頂勿肉搜未成年提醒",b:3,f:500},
+  {t:"放任衝聲量",risk:true,p:0.25,s:{b:8,f:1600},x:{b:-17,f:-2400}},
+  {t:"關留言",b:-4,f:0} ]},
+{c:"爭議",t:"有留言質疑你們的街訪是「找好的」造假。",o:[
+  {t:"公開原始完整影片自清",b:3,f:500},
+  {t:"回「不然你來拍」",risk:true,p:0.25,s:{b:5,f:900},x:{b:-13,f:-1700}},
+  {t:"刪留言",b:-3,f:-100} ]},
+{c:"爭議",t:"有人在身心障礙就業新聞下留言歧視，被其他網友圍剿。",o:[
+  {t:"隱藏並發平權聲明",risk:true,p:0.5,s:{b:9,f:1600},x:{b:-9,f:-1100}},
+  {t:"補上就業資源資訊",b:3,f:400},
+  {t:"沉默",b:-3,f:-200} ]},
+{c:"爭議",t:"有網友在毒品新聞下留言分享「使用經驗」，底下一片譁然。",o:[
+  {t:"刪除並附戒毒專線",b:3,f:400},
+  {t:"留著當話題",risk:true,p:0.2,s:{b:5,f:900},x:{b:-15,f:-2000}},
+  {t:"檢舉帳號",b:1,f:200} ]},
+{c:"爭議",t:"有人在你貼文下貼出未成年網紅的爭議言論要你報導。",o:[
+  {t:"考量兒少保護婉拒",b:2,f:300},
+  {t:"直接做成新聞",risk:true,p:0.25,s:{b:9,f:1700},x:{b:-16,f:-2300}},
+  {t:"先求證",b:-1,f:100} ]},
+{c:"爭議",t:"颱風天有人留言揪團去海邊看浪，被罵害人害己。",o:[
+  {t:"置頂勿前往危險區域",b:3,f:500},
+  {t:"跟著嘴那群人",risk:true,p:0.3,s:{b:6,f:1000},x:{b:-11,f:-1500}},
+  {t:"隱藏留言",b:-2,f:100} ]},
+{c:"爭議",t:"有網友在你貼文下開戰說你偏袒某政黨，附上截圖。",o:[
+  {t:"貼出近月各黨報導比例",b:3,f:500},
+  {t:"回嗆對方",risk:true,p:0.3,s:{b:6,f:1000},x:{b:-13,f:-1700}},
+  {t:"不理",b:-2,f:-100} ]},
+{c:"爭議",t:"動物園動物死亡新聞下，網友開始獵巫園方人員。",o:[
+  {t:"置頂等調查報告提醒",b:2,f:400},
+  {t:"放任獵巫衝聲量",risk:true,p:0.25,s:{b:8,f:1600},x:{b:-16,f:-2200}},
+  {t:"關留言",b:-4,f:0} ]},
+{c:"爭議",t:"有留言在原民狩獵新聞下爆發文化與保育的激辯。",o:[
+  {t:"補上雙方觀點說明",b:3,f:400},
+  {t:"選一邊置頂",risk:true,p:0.3,s:{b:6,f:1100},x:{b:-12,f:-1600}},
+  {t:"關留言",b:-4,f:0} ]},
+{c:"爭議",t:"有人在你直播留言狂刷詐騙投資群組連結。",o:[
+  {t:"封鎖並公告防詐",b:3,f:400},
+  {t:"懶得理",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1900}},
+  {t:"檢舉帳號",b:1,f:200} ]},
+{c:"爭議",t:"有網友在你貼文下點名某醫院醫療疏失，情緒激動但無證據。",o:[
+  {t:"先向院方求證再說",b:1,f:200},
+  {t:"直接做成新聞",risk:true,p:0.25,s:{b:10,f:1900},x:{b:-17,f:-2400}},
+  {t:"隱藏未證實留言",b:-2,f:100} ]},
+{c:"爭議",t:"有人在房市新聞下留言教大家如何逃漏房地合一稅。",o:[
+  {t:"刪除並提醒依法申報",b:2,f:300},
+  {t:"留著當流量",risk:true,p:0.2,s:{b:4,f:700},x:{b:-13,f:-1700}},
+  {t:"檢舉留言",b:1,f:200} ]},
+{c:"爭議",t:"有網友在你貼文下為同志家庭發聲，引來另一派圍攻。",o:[
+  {t:"置頂互相尊重",b:2,f:400},
+  {t:"官方表態支持多元成家",risk:true,p:0.5,s:{b:9,f:1700},x:{b:-10,f:-1300}},
+  {t:"關留言",b:-4,f:0} ]},
+{c:"爭議",t:"有人在運動禁藥新聞下未審先判點名某選手。",o:[
+  {t:"置頂勿未審先判",b:3,f:400},
+  {t:"跟著起鬨",risk:true,p:0.25,s:{b:6,f:1000},x:{b:-13,f:-1700}},
+  {t:"隱藏留言",b:-2,f:100} ]},
+{c:"爭議",t:"有網友在你貼文下貼出別人家的門牌要大家去「關心」。",o:[
+  {t:"立刻刪除個資",b:-2,f:200},
+  {t:"放著不管",risk:true,p:0.2,s:{b:3,f:500},x:{b:-16,f:-2200}},
+  {t:"檢舉並封鎖",b:1,f:200} ]},
+{c:"爭議",t:"有人在你貼文下帶動抵制某品牌，理由尚未證實。",o:[
+  {t:"補上品牌回應平衡",b:3,f:400},
+  {t:"跟著號召抵制",risk:true,p:0.25,s:{b:7,f:1300},x:{b:-14,f:-1900}},
+  {t:"隱藏留言",b:-2,f:100} ]},
+{c:"爭議",t:"有網友在你貼文下為街友發聲，另一派嫌他們影響市容。",o:[
+  {t:"補上社會局資源資訊",b:3,f:500},
+  {t:"選邊站",risk:true,p:0.3,s:{b:6,f:1000},x:{b:-12,f:-1600}},
+  {t:"關留言",b:-4,f:0} ]},
+{c:"爭議",t:"有人在你貼文下爆料某網紅逃稅，附上疑似帳單。",o:[
+  {t:"向國稅局與當事人求證",b:1,f:200},
+  {t:"直接發獨家",risk:true,p:0.3,s:{b:12,f:2200},x:{b:-18,f:-2600}},
+  {t:"當八卦不理",b:-2,f:-100} ]},
+{c:"爭議",t:"有網友在你貼文下為工時過勞發聲，老闆派人反駁洗版。",o:[
+  {t:"置頂勞動部申訴管道",b:3,f:500},
+  {t:"選一邊置頂",risk:true,p:0.3,s:{b:6,f:1100},x:{b:-12,f:-1600}},
+  {t:"關留言",b:-4,f:0} ]},
+{c:"爭議",t:"有人在你貼文下散布某疫苗批號有問題的未證實消息。",o:[
+  {t:"附食藥署批號查詢澄清",b:4,f:600},
+  {t:"刪留言防擴散",b:-2,f:100},
+  {t:"放著衝聲量",risk:true,p:0.2,s:{b:5,f:900},x:{b:-15,f:-2000}} ]},
+{c:"爭議",t:"有網友在你貼文下帶風向說某慈善機構斂財。",o:[
+  {t:"補上機構徵信連結",b:3,f:500},
+  {t:"跟著質疑",risk:true,p:0.25,s:{b:6,f:1000},x:{b:-13,f:-1700}},
+  {t:"隱藏留言",b:-2,f:100} ]},
+{c:"爭議",t:"有人在你貼文下用假帳號假裝是受害者博取同情。",o:[
+  {t:"查證身分再處理",b:1,f:200},
+  {t:"直接拿來做催淚新聞",risk:true,p:0.25,s:{b:9,f:1700},x:{b:-16,f:-2300}},
+  {t:"檢舉可疑帳號",b:1,f:200} ]},
+{c:"爭議",t:"有網友在你貼文下為流浪動物 TNR 政策吵翻。",o:[
+  {t:"補上動保處政策說明",b:3,f:400},
+  {t:"選邊按讚",risk:true,p:0.3,s:{b:6,f:1000},x:{b:-11,f:-1500}},
+  {t:"關留言",b:-4,f:0} ]},
+{c:"爭議",t:"有人在你貼文下貼出私人對話截圖公審網友。",o:[
+  {t:"隱藏並提醒勿公審",b:2,f:300},
+  {t:"放任讓它燒",risk:true,p:0.25,s:{b:7,f:1300},x:{b:-14,f:-1900}},
+  {t:"關留言",b:-3,f:-100} ]},
+{c:"爭議",t:"有網友在空汙新聞下點名某工廠，另一派說是境外移入。",o:[
+  {t:"補上環保署監測資料",b:3,f:500},
+  {t:"選一邊帶風向",risk:true,p:0.3,s:{b:6,f:1100},x:{b:-12,f:-1600}},
+  {t:"關留言",b:-4,f:0} ]},
+{c:"爭議",t:"有人在你貼文下散布某藝人吸毒的未證實爆料。",o:[
+  {t:"求證前不報導",b:-1,f:100},
+  {t:"馬上截圖發新聞",risk:true,p:0.3,s:{b:12,f:2200},x:{b:-18,f:-2600}},
+  {t:"刪留言",b:-2,f:-100} ]},
+{c:"爭議",t:"有網友在你貼文下為課審爭議洗版，兩派都很兇。",o:[
+  {t:"置頂教育部說明",b:3,f:400},
+  {t:"選邊站",risk:true,p:0.3,s:{b:6,f:1000},x:{b:-12,f:-1600}},
+  {t:"關留言",b:-4,f:0} ]},
+{c:"爭議",t:"有人在你貼文下爆料某餐廳歧視身障客人，附現場影片。",o:[
+  {t:"向店家求證並謹慎處理",b:1,f:300},
+  {t:"直接公審那家店",risk:true,p:0.3,s:{b:9,f:1700},x:{b:-15,f:-2100}},
+  {t:"當沒看到",b:-3,f:-200} ]},
+{c:"爭議",t:"有網友在你貼文下為健保破產議題吵世代對立。",o:[
+  {t:"補上健保署財務說明",b:3,f:400},
+  {t:"選邊帶風向",risk:true,p:0.3,s:{b:6,f:1100},x:{b:-12,f:-1600}},
+  {t:"關留言",b:-4,f:0} ]},
+{c:"爭議",t:"有人在你貼文下公開某公眾人物的就醫隱私。",o:[
+  {t:"立刻刪除隱私內容",b:-2,f:200},
+  {t:"當獨家拿來用",risk:true,p:0.2,s:{b:8,f:1500},x:{b:-17,f:-2400}},
+  {t:"檢舉留言",b:1,f:200} ]},
+{c:"爭議",t:"有網友在你貼文下帶動出征某客服人員，附上工牌照。",o:[
+  {t:"打碼並制止出征",b:2,f:300},
+  {t:"放任衝互動",risk:true,p:0.2,s:{b:6,f:1100},x:{b:-16,f:-2200}},
+  {t:"關留言",b:-3,f:-100} ]},
+{c:"爭議",t:"有人在你貼文下散布某連鎖店要倒閉的假消息。",o:[
+  {t:"向公司求證並澄清",b:3,f:400},
+  {t:"跟著傳",risk:true,p:0.2,s:{b:5,f:900},x:{b:-14,f:-1900}},
+  {t:"刪留言",b:-2,f:100} ]},
+{c:"爭議",t:"有網友在你貼文下為學生服儀解禁吵翻校方與家長。",o:[
+  {t:"置頂雙方說法",b:2,f:400},
+  {t:"選一邊",risk:true,p:0.3,s:{b:6,f:1000},x:{b:-11,f:-1500}},
+  {t:"關留言",b:-4,f:0} ]},
+{c:"爭議",t:"有人在你貼文下爆料某網紅帶貨賣假貨，附對話。",o:[
+  {t:"向雙方求證再報",b:1,f:200},
+  {t:"直接做成獨家",risk:true,p:0.3,s:{b:11,f:2100},x:{b:-17,f:-2400}},
+  {t:"當八卦不理",b:-2,f:-100} ]},
+{c:"爭議",t:"有網友在你貼文下為核電存廢激烈對戰。",o:[
+  {t:"補上能源配比資料",b:3,f:400},
+  {t:"選邊帶風向",risk:true,p:0.3,s:{b:6,f:1100},x:{b:-12,f:-1600}},
+  {t:"關留言",b:-4,f:0} ]},
+{c:"爭議",t:"有人在你貼文下貼出未成年當事人的全名與學校。",o:[
+  {t:"立刻刪除個資",b:-2,f:200},
+  {t:"放著不管",risk:true,p:0.2,s:{b:3,f:500},x:{b:-16,f:-2300}},
+  {t:"檢舉並封鎖",b:1,f:200} ]},
+
+/* -- 諷刺 -- */
+{c:"諷刺",t:"鄉民把你的標題丟給 AI，請它「翻譯成人話」做成梗圖。",o:[
+  {t:"自己也丟一次還轉發",risk:true,p:0.6,s:{b:9,f:1500},x:{b:-8,f:-900}},
+  {t:"檢討標題用詞",b:2,f:300},
+  {t:"要求下架",risk:true,p:0.15,s:{b:1,f:200},x:{b:-11,f:-1400}} ]},
+{c:"諷刺",t:"有人統計你一個月下了 38 次「怒了」當開頭。",o:[
+  {t:"自嘲並換新開頭",risk:true,p:0.55,s:{b:8,f:1200},x:{b:-6,f:-700}},
+  {t:"坦承檢討",b:2,f:300},
+  {t:"回「我沒有怒」",risk:true,p:0.5,s:{b:7,f:1100},x:{b:-8,f:-900}} ]},
+{c:"諷刺",t:"對手台把你出的包剪進他們的年度搞笑回顧。",o:[
+  {t:"幽默回「感謝捧場」",risk:true,p:0.55,s:{b:9,f:1500},x:{b:-9,f:-1100}},
+  {t:"大方承認已改進",b:3,f:400},
+  {t:"發函抗議",risk:true,p:0.15,s:{b:1,f:200},x:{b:-11,f:-1400}} ]},
+{c:"諷刺",t:"有人把你的貼文做成「小編 bingo」還附上規則。",o:[
+  {t:"自己開一局直播連線",risk:true,p:0.6,s:{b:9,f:1500},x:{b:-8,f:-900}},
+  {t:"按讚帶過",b:2,f:400},
+  {t:"假裝沒看到",b:-2,f:-100} ]},
+{c:"諷刺",t:"粉絲把你崩潰的限動做成動圖在群組瘋傳。",o:[
+  {t:"自己也拿來當回覆貼圖",risk:true,p:0.65,s:{b:9,f:1500},x:{b:-7,f:-800}},
+  {t:"笑笑道謝",b:2,f:400},
+  {t:"覺得被玩不回應",b:-2,f:-100} ]},
+{c:"諷刺",t:"有語言學家在粉專分析你們的「農場標題語法」。",o:[
+  {t:"虛心請教並致謝",b:4,f:700},
+  {t:"狡辯那是風格",risk:true,p:0.3,s:{b:4,f:600},x:{b:-11,f:-1300}},
+  {t:"不理",b:-2,f:-100} ]},
+{c:"諷刺",t:"有人把你的即時快訊做成「幾秒後刪文」倒數計時梗。",o:[
+  {t:"自嘲並承諾校稿再發",risk:true,p:0.55,s:{b:8,f:1200},x:{b:-6,f:-700}},
+  {t:"檢討發文流程",b:2,f:300},
+  {t:"硬說沒刪過",risk:true,p:0.25,s:{b:3,f:500},x:{b:-10,f:-1200}} ]},
+{c:"諷刺",t:"國外網友把你的烏龍截圖發到 Reddit 爆紅。",o:[
+  {t:"火速更正並英文回應",b:3,f:500},
+  {t:"刪原文裝沒事",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1900}},
+  {t:"嘴對方看不懂中文",risk:true,p:0.25,s:{b:3,f:500},x:{b:-12,f:-1500}} ]},
+{c:"諷刺",t:"有迷因帳號做了「小編離職倒數」月曆開賣。",o:[
+  {t:"幽默回「我還在」",risk:true,p:0.6,s:{b:9,f:1500},x:{b:-7,f:-800}},
+  {t:"按讚表示大器",b:2,f:400},
+  {t:"要求下架",risk:true,p:0.15,s:{b:1,f:200},x:{b:-11,f:-1400}} ]},
+{c:"諷刺",t:"有人把你和對手台的錯字做成「誰比較瞎」對決。",o:[
+  {t:"自嘲認輸還加碼",risk:true,p:0.55,s:{b:8,f:1300},x:{b:-8,f:-900}},
+  {t:"檢討校稿",b:2,f:300},
+  {t:"硬要贏回來",risk:true,p:0.3,s:{b:5,f:800},x:{b:-10,f:-1200}} ]},
+{c:"諷刺",t:"脫口秀演員把你們的標題當段子講，全場大笑。",o:[
+  {t:"官方留言「我有被逗笑」",risk:true,p:0.6,s:{b:9,f:1500},x:{b:-7,f:-800}},
+  {t:"大方不回應",b:1,f:200},
+  {t:"發函抗議",risk:true,p:0.15,s:{b:1,f:200},x:{b:-12,f:-1500}} ]},
+{c:"諷刺",t:"有人把你的新聞配上「世界末日」BGM 做成惡搞。",o:[
+  {t:"自己配更浮誇的回敬",risk:true,p:0.6,s:{b:9,f:1500},x:{b:-8,f:-900}},
+  {t:"按讚帶過",b:2,f:400},
+  {t:"檢舉影片",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"諷刺",t:"有人把你每次道歉的貼文整理成「道歉懶人包」。",o:[
+  {t:"坦承並承諾少出包",risk:true,p:0.5,s:{b:7,f:1100},x:{b:-8,f:-900}},
+  {t:"低調看待",b:1,f:200},
+  {t:"硬說沒那麼多",risk:true,p:0.2,s:{b:3,f:500},x:{b:-11,f:-1400}} ]},
+{c:"諷刺",t:"有網美在限動嘲你們「老人才看的台」。",o:[
+  {t:"發年輕化企劃回應",risk:true,p:0.5,s:{b:8,f:1300},x:{b:-9,f:-1100}},
+  {t:"幽默自嘲",b:3,f:400},
+  {t:"回嗆對方",risk:true,p:0.25,s:{b:4,f:700},x:{b:-12,f:-1500}} ]},
+{c:"諷刺",t:"有人把你的貼文時間軸做成「一天崩潰幾次」折線圖。",o:[
+  {t:"自嘲還補一句今天更慘",risk:true,p:0.6,s:{b:9,f:1500},x:{b:-7,f:-800}},
+  {t:"按讚帶過",b:2,f:400},
+  {t:"假裝沒看到",b:-2,f:-100} ]},
+{c:"諷刺",t:"對手台小編在限動發「某台又抄我們」，被抓到其實是你先發。",o:[
+  {t:"貼出時間戳自清",b:3,f:500},
+  {t:"幽默回「是你抄我喔」",risk:true,p:0.5,s:{b:8,f:1300},x:{b:-9,f:-1100}},
+  {t:"不理",b:-2,f:-100} ]},
+{c:"諷刺",t:"有人做了「TVSB 小編語錄」T 恤在市集賣。",o:[
+  {t:"自己買一件穿去上班拍照",risk:true,p:0.6,s:{b:9,f:1500},x:{b:-7,f:-800}},
+  {t:"按讚帶過",b:2,f:400},
+  {t:"主張肖像權要下架",risk:true,p:0.15,s:{b:1,f:200},x:{b:-11,f:-1400}} ]},
+{c:"諷刺",t:"有人統計你今年用過 101 張「示意圖」被笑沒圖。",o:[
+  {t:"自嘲並承諾多拍實景",risk:true,p:0.55,s:{b:8,f:1200},x:{b:-6,f:-700}},
+  {t:"檢討配圖",b:2,f:300},
+  {t:"硬說示意圖也是圖",risk:true,p:0.25,s:{b:3,f:500},x:{b:-9,f:-1100}} ]},
+{c:"諷刺",t:"知識型創作者做影片教「如何一眼看穿農場新聞」還 cue 你。",o:[
+  {t:"留言感謝並談改進",b:4,f:600},
+  {t:"狡辯點閱也是民意",risk:true,p:0.3,s:{b:4,f:600},x:{b:-11,f:-1300}},
+  {t:"不理",b:-2,f:-100} ]},
+{c:"諷刺",t:"有人把你的限時動態做成「找找看哪裡有錯字」遊戲。",o:[
+  {t:"公布答案還自首",risk:true,p:0.6,s:{b:9,f:1500},x:{b:-7,f:-800}},
+  {t:"虛心校稿",b:2,f:300},
+  {t:"硬說是故意的",risk:true,p:0.25,s:{b:3,f:500},x:{b:-9,f:-1100}} ]},
+{c:"諷刺",t:"政論節目把你們的帶風向標題當負面教材分析了一集。",o:[
+  {t:"發聲明承諾中立報導",b:3,f:500},
+  {t:"貼平衡報導證據",b:3,f:400},
+  {t:"回嗆節目",risk:true,p:0.25,s:{b:4,f:700},x:{b:-13,f:-1700}} ]},
+{c:"諷刺",t:"有人把你的新聞做成 AI 語音惡搞，點閱比你本尊高。",o:[
+  {t:"幽默承認輸給 AI",risk:true,p:0.6,s:{b:9,f:1500},x:{b:-7,f:-800}},
+  {t:"按讚帶過",b:2,f:400},
+  {t:"檢舉侵權",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"諷刺",t:"有人嘲你「獨家」都是別台兩小時前發過的。",o:[
+  {t:"拿掉獨家並檢討時效",b:2,f:300},
+  {t:"改成「獨家追蹤」",risk:true,p:0.35,s:{b:4,f:600},x:{b:-9,f:-1100}},
+  {t:"硬掛獨家",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"諷刺",t:"有粉絲把你一週的貼文做成 Podcast 逐字稿朗讀吐槽。",o:[
+  {t:"上節目當來賓回應",risk:true,p:0.55,s:{b:9,f:1500},x:{b:-8,f:-900}},
+  {t:"笑笑道謝",b:2,f:400},
+  {t:"要求停更",risk:true,p:0.15,s:{b:1,f:200},x:{b:-11,f:-1400}} ]},
+{c:"諷刺",t:"有人把你的標題丟進「農場指數測試機」拿了滿分。",o:[
+  {t:"自嘲並調整下標",risk:true,p:0.55,s:{b:8,f:1200},x:{b:-6,f:-700}},
+  {t:"檢討標題",b:2,f:300},
+  {t:"回「滿分不好嗎」",risk:true,p:0.3,s:{b:4,f:700},x:{b:-9,f:-1100}} ]},
+{c:"諷刺",t:"有學生拿你的新聞當媒體識讀作業的錯誤示範上台報告。",o:[
+  {t:"大方回應並談改進",b:3,f:500},
+  {t:"虛心接受",b:2,f:300},
+  {t:"抗議被點名",risk:true,p:0.15,s:{b:1,f:200},x:{b:-12,f:-1500}} ]},
+{c:"諷刺",t:"有人做了「小編心情預報」每天預測你會不會崩潰。",o:[
+  {t:"自己來報一則心情預報",risk:true,p:0.6,s:{b:9,f:1500},x:{b:-7,f:-800}},
+  {t:"笑笑帶過",b:2,f:400},
+  {t:"假裝沒看到",b:-2,f:-100} ]},
+{c:"諷刺",t:"有名嘴酸「這年頭小編比記者還大牌」。",o:[
+  {t:"溫和說明小編的工作",b:3,f:400},
+  {t:"列出一天的工作量",b:3,f:500},
+  {t:"回嗆名嘴",risk:true,p:0.3,s:{b:6,f:1000},x:{b:-13,f:-1600}} ]},
+{c:"諷刺",t:"有人把你刪過的文全部備份做成「小編黑歷史館」。",o:[
+  {t:"大方面對承諾改進",risk:true,p:0.5,s:{b:8,f:1300},x:{b:-9,f:-1100}},
+  {t:"低調道歉",b:1,f:200},
+  {t:"要求下架",risk:true,p:0.15,s:{b:1,f:200},x:{b:-12,f:-1500}} ]},
+{c:"諷刺",t:"有人把你的貼文配上馬戲團音效做成短影音爆紅。",o:[
+  {t:"自己配更好笑的回敬",risk:true,p:0.6,s:{b:9,f:1500},x:{b:-8,f:-900}},
+  {t:"按讚帶過",b:2,f:400},
+  {t:"檢舉影片",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"諷刺",t:"有人嘲你每逢連假就發「出遊人潮」廢新聞。",o:[
+  {t:"自嘲並換個角度做",risk:true,p:0.55,s:{b:8,f:1200},x:{b:-6,f:-700}},
+  {t:"檢討選題",b:2,f:300},
+  {t:"回「不然你想看啥」",risk:true,p:0.3,s:{b:4,f:700},x:{b:-9,f:-1100}} ]},
+{c:"諷刺",t:"對手台做了「破解某台的農場 SOP」影片衝到熱門。",o:[
+  {t:"也做一支破解對手回敬",risk:true,p:0.45,s:{b:9,f:1500},x:{b:-11,f:-1300}},
+  {t:"一笑置之按讚",b:2,f:400},
+  {t:"嚴正抗議",risk:true,p:0.15,s:{b:1,f:200},x:{b:-12,f:-1500}} ]},
+{c:"諷刺",t:"有人把你的「全網瘋傳」跟實際分享數並排打臉。",o:[
+  {t:"自嘲改掉浮誇用語",risk:true,p:0.55,s:{b:8,f:1200},x:{b:-6,f:-700}},
+  {t:"坦承檢討",b:2,f:300},
+  {t:"硬說真的有傳",risk:true,p:0.25,s:{b:3,f:500},x:{b:-10,f:-1200}} ]},
+{c:"諷刺",t:"有迷因把你的小編頭貼換成一隻快燒焦的吐司。",o:[
+  {t:"直接把頭貼換成那張",risk:true,p:0.65,s:{b:10,f:1700},x:{b:-6,f:-700}},
+  {t:"笑笑道謝",b:2,f:400},
+  {t:"要求下架",risk:true,p:0.15,s:{b:1,f:200},x:{b:-11,f:-1400}} ]},
+{c:"諷刺",t:"有人做了「小編求生指南」教人怎麼當小編不被炒。",o:[
+  {t:"幽默補充幾點心得",risk:true,p:0.6,s:{b:9,f:1500},x:{b:-7,f:-800}},
+  {t:"按讚帶過",b:2,f:400},
+  {t:"假裝沒看到",b:-2,f:-100} ]},
+
+/* -- 誤 -- */
+{c:"誤",t:"你把「上升」的箭頭圖示放成向下，趨勢完全看反。",o:[
+  {t:"換正確圖示並更正",b:1,f:200},
+  {t:"偷換圖",risk:true,p:0.3,s:{b:3,f:400},x:{b:-11,f:-1400}},
+  {t:"硬拗手滑",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你把兩個不同事件的照片拼在一起，被說移花接木。",o:[
+  {t:"下架並說明分開報導",b:-1,f:200},
+  {t:"補字說明是示意",risk:true,p:0.35,s:{b:4,f:600},x:{b:-11,f:-1400}},
+  {t:"硬說沒問題",risk:true,p:0.2,s:{b:2,f:300},x:{b:-13,f:-1700}} ]},
+{c:"誤",t:"你把某里長寫成某市長，官階一下跳很多級。",o:[
+  {t:"立刻更正並致歉",b:1,f:200},
+  {t:"默默改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-10,f:-1300}},
+  {t:"硬拗是未來式",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你把影片的受訪者字幕掛錯人，講話的變成旁邊路人。",o:[
+  {t:"重上字幕並致歉",b:1,f:200},
+  {t:"留言置頂更正",b:2,f:300},
+  {t:"當沒人會發現",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你把颱風的風速單位 km/h 當成節（knots）報，數字差很多。",o:[
+  {t:"更正換算並附氣象署",b:2,f:300},
+  {t:"硬拗讀者自己換",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}},
+  {t:"刪文重發",b:0,f:100} ]},
+{c:"誤",t:"你把演唱會的場次日期寫錯，歌迷差點買錯票。",o:[
+  {t:"更正並附官方售票連結",b:2,f:400},
+  {t:"留言置頂更正",b:1,f:200},
+  {t:"當沒人會當真",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"誤",t:"你把某國的首都寫錯，被地理老師在底下糾正。",o:[
+  {t:"更正並感謝老師",b:3,f:500},
+  {t:"狡辯曾經是首都",risk:true,p:0.3,s:{b:4,f:600},x:{b:-9,f:-1100}},
+  {t:"不理",b:-2,f:-100} ]},
+{c:"誤",t:"你把一段舊影片當成今天現場畫面發布。",o:[
+  {t:"下架並標註資料畫面",b:0,f:200},
+  {t:"補字說明是回顧",risk:true,p:0.4,s:{b:4,f:600},x:{b:-9,f:-1100}},
+  {t:"硬掛現場",risk:true,p:0.2,s:{b:2,f:300},x:{b:-13,f:-1700}} ]},
+{c:"誤",t:"你把確診人數的「本土」與「境外」標反了。",o:[
+  {t:"更正並附疾管署資料",b:2,f:300},
+  {t:"偷改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-11,f:-1400}},
+  {t:"硬拗差不多",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"誤",t:"你把某選手的國籍寫錯，引來兩國網友留言。",o:[
+  {t:"更正並道歉",b:1,f:200},
+  {t:"默默改掉",risk:true,p:0.3,s:{b:3,f:400},x:{b:-10,f:-1300}},
+  {t:"硬拗有雙重國籍",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你發的懶人包把步驟順序寫反，照做會出事。",o:[
+  {t:"重製正確版並標註",b:2,f:400},
+  {t:"留言補更正",b:1,f:200},
+  {t:"當沒事",risk:true,p:0.2,s:{b:2,f:300},x:{b:-13,f:-1700}} ]},
+{c:"誤",t:"你把兩位同姓立委的發言張冠李戴。",o:[
+  {t:"更正並 tag 正確的人",b:2,f:300},
+  {t:"偷改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-11,f:-1400}},
+  {t:"硬拗立場一樣",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"誤",t:"你把油價「漲」寫成「跌」，加油站被灌爆詢問。",o:[
+  {t:"更正並附中油公告",b:2,f:300},
+  {t:"硬拗是預測",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}},
+  {t:"刪文",b:0,f:100} ]},
+{c:"誤",t:"你把某電影的上映日期寫成去年，影迷一頭霧水。",o:[
+  {t:"更正並附官方檔期",b:1,f:200},
+  {t:"默默改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-9,f:-1200}},
+  {t:"當沒事",risk:true,p:0.2,s:{b:2,f:300},x:{b:-10,f:-1300}} ]},
+{c:"誤",t:"你把地震的「芮氏規模」與「震度」搞混，寫出誇張數字。",o:[
+  {t:"更正並說明差異",b:2,f:300},
+  {t:"偷改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-11,f:-1400}},
+  {t:"當沒人懂",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"誤",t:"你把某公司的「營收」寫成「獲利」，財經網友炸鍋。",o:[
+  {t:"更正並附財報",b:2,f:300},
+  {t:"硬拗讀者自己看",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}},
+  {t:"刪文",b:0,f:100} ]},
+{c:"誤",t:"你把一句反諷當成當事人真心話來報。",o:[
+  {t:"下架並補上完整語境",b:0,f:200},
+  {t:"補字說明是反諷",risk:true,p:0.4,s:{b:4,f:600},x:{b:-10,f:-1300}},
+  {t:"硬拗字面沒錯",risk:true,p:0.2,s:{b:2,f:300},x:{b:-13,f:-1700}} ]},
+{c:"誤",t:"你把某活動的免費寫成收費，害網友罵成一團。",o:[
+  {t:"更正並道歉",b:1,f:200},
+  {t:"留言置頂更正",b:2,f:300},
+  {t:"當沒人會信",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你把某球隊的勝場數打多了，季後賽資格算錯。",o:[
+  {t:"更正並附聯盟數據",b:2,f:300},
+  {t:"偷改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-10,f:-1300}},
+  {t:"硬拗會追上",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你把新聞的地點寫成同名的另一個鄉鎮。",o:[
+  {t:"更正正確地點",b:1,f:200},
+  {t:"偷改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-9,f:-1200}},
+  {t:"硬拗兩地都報",risk:true,p:0.2,s:{b:2,f:300},x:{b:-10,f:-1300}} ]},
+{c:"誤",t:"你把一張 AI 生成圖當成真實照片配進新聞。",o:[
+  {t:"換真圖並說明疏失",b:-1,f:200},
+  {t:"補標 AI 生成",risk:true,p:0.35,s:{b:4,f:600},x:{b:-11,f:-1400}},
+  {t:"硬說看不出來",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1800}} ]},
+{c:"誤",t:"你把某法案的「三讀通過」寫成「一讀」，進度全錯。",o:[
+  {t:"更正並附立院公報",b:2,f:300},
+  {t:"偷改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-11,f:-1400}},
+  {t:"硬拗快了",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"誤",t:"你把受災戶數多打一位數，災情看起來誇張十倍。",o:[
+  {t:"立刻更正並道歉",b:0,f:200},
+  {t:"刪文重發",b:0,f:100},
+  {t:"當沒事",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1800}} ]},
+{c:"誤",t:"你把某餐廳的分店地址貼成總店，網友跑錯家。",o:[
+  {t:"更正並道歉",b:1,f:200},
+  {t:"留言補正確地址",b:2,f:300},
+  {t:"當沒人會去",risk:true,p:0.2,s:{b:2,f:300},x:{b:-10,f:-1300}} ]},
+{c:"誤",t:"你把一段訪問的「不」字漏打，意思整個相反。",o:[
+  {t:"立刻補回並道歉",b:0,f:200},
+  {t:"下架重寫",b:-1,f:100},
+  {t:"當沒事",risk:true,p:0.2,s:{b:2,f:300},x:{b:-15,f:-2000}} ]},
+{c:"誤",t:"你把某產品的召回批號貼錯，消費者查不到。",o:[
+  {t:"更正批號並附官方公告",b:2,f:400},
+  {t:"留言補正確批號",b:1,f:200},
+  {t:"當沒事",risk:true,p:0.2,s:{b:2,f:300},x:{b:-13,f:-1700}} ]},
+{c:"誤",t:"你把某人的性別代稱寫錯，被本人留言糾正。",o:[
+  {t:"立刻更正並致歉",b:2,f:400},
+  {t:"默默改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-9,f:-1200}},
+  {t:"硬拗手誤",risk:true,p:0.2,s:{b:2,f:300},x:{b:-10,f:-1300}} ]},
+{c:"誤",t:"你把頒獎典禮的主持人寫成去年那位。",o:[
+  {t:"更正並道歉",b:1,f:200},
+  {t:"偷改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-9,f:-1200}},
+  {t:"當沒人記得",risk:true,p:0.2,s:{b:2,f:300},x:{b:-10,f:-1300}} ]},
+{c:"誤",t:"你把一條交通事故發生的方向寫反，用路人看不懂。",o:[
+  {t:"更正方向並附圖",b:2,f:300},
+  {t:"偷改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-9,f:-1200}},
+  {t:"硬拗兩邊都塞",risk:true,p:0.2,s:{b:2,f:300},x:{b:-10,f:-1300}} ]},
+{c:"誤",t:"你把某藥品的劑量單位寫錯，可能造成誤用。",o:[
+  {t:"火速更正並附藥師提醒",b:1,f:300},
+  {t:"偷改",risk:true,p:0.25,s:{b:3,f:400},x:{b:-15,f:-2000}},
+  {t:"當沒人照做",risk:true,p:0.2,s:{b:2,f:300},x:{b:-16,f:-2200}} ]},
+{c:"誤",t:"你把一位已退役的選手寫成還在隊上。",o:[
+  {t:"更正並道歉",b:1,f:200},
+  {t:"默默改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-9,f:-1200}},
+  {t:"硬拗復出傳聞",risk:true,p:0.2,s:{b:2,f:300},x:{b:-10,f:-1300}} ]},
+{c:"誤",t:"你把某展覽的結束日期提早一週，害人撲空。",o:[
+  {t:"更正並附官方檔期",b:2,f:300},
+  {t:"留言置頂更正",b:1,f:200},
+  {t:"當沒人會去",risk:true,p:0.2,s:{b:2,f:300},x:{b:-10,f:-1300}} ]},
+{c:"誤",t:"你把一句英文標語翻錯，意思變得莫名其妙。",o:[
+  {t:"更正翻譯並致謝網友",b:2,f:300},
+  {t:"狡辯是意譯",risk:true,p:0.3,s:{b:4,f:600},x:{b:-9,f:-1100}},
+  {t:"刪文",b:0,f:100} ]},
+{c:"誤",t:"你把兩家公司的合併與收購搞混，財經意義完全不同。",o:[
+  {t:"更正並附公開資訊",b:2,f:300},
+  {t:"偷改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-11,f:-1400}},
+  {t:"硬拗差不多",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"誤",t:"你把一段慢動作重播當成真實速度報成破紀錄。",o:[
+  {t:"更正並說明是慢動作",b:1,f:200},
+  {t:"偷改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-10,f:-1300}},
+  {t:"硬掛破紀錄",risk:true,p:0.2,s:{b:2,f:300},x:{b:-12,f:-1500}} ]},
+{c:"誤",t:"你把某里的停水時間寫錯一天，居民白存水。",o:[
+  {t:"更正並附自來水公司公告",b:2,f:300},
+  {t:"留言置頂更正",b:1,f:200},
+  {t:"當沒事",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你把某人的職稱從「代理」漏掉，變成正式任命。",o:[
+  {t:"補上「代理」並致歉",b:1,f:200},
+  {t:"默默改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-9,f:-1200}},
+  {t:"硬拗遲早的事",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你把一張諷刺漫畫當成真實事件來報。",o:[
+  {t:"下架並說明是創作",b:-1,f:200},
+  {t:"補字澄清",risk:true,p:0.35,s:{b:4,f:600},x:{b:-11,f:-1400}},
+  {t:"硬說有隱喻",risk:true,p:0.2,s:{b:2,f:300},x:{b:-13,f:-1700}} ]},
+{c:"誤",t:"你把某活動參加人數的「上限」寫成「已報名」。",o:[
+  {t:"更正並道歉",b:1,f:200},
+  {t:"留言置頂更正",b:2,f:300},
+  {t:"當沒差",risk:true,p:0.2,s:{b:2,f:300},x:{b:-10,f:-1300}} ]},
+{c:"誤",t:"你把某人的名字同音字打錯，本人私訊很介意。",o:[
+  {t:"立刻更正並私訊致歉",b:2,f:300},
+  {t:"默默改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-9,f:-1200}},
+  {t:"硬說常被打錯",risk:true,p:0.2,s:{b:2,f:300},x:{b:-10,f:-1300}} ]},
+{c:"誤",t:"你把一段得獎感言的致謝對象搞錯人。",o:[
+  {t:"更正並致歉",b:1,f:200},
+  {t:"偷改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-9,f:-1200}},
+  {t:"當沒人在意",risk:true,p:0.2,s:{b:2,f:300},x:{b:-10,f:-1300}} ]},
+{c:"誤",t:"你把某店的營業時間寫錯，網友撲空罵翻。",o:[
+  {t:"更正並道歉",b:1,f:200},
+  {t:"留言補正確時間",b:2,f:300},
+  {t:"當沒事",risk:true,p:0.2,s:{b:2,f:300},x:{b:-10,f:-1300}} ]},
+{c:"誤",t:"你把某研究「相關」寫成「因果」，被學者糾正。",o:[
+  {t:"更正用詞並致謝",b:3,f:500},
+  {t:"狡辯一般人看得懂就好",risk:true,p:0.3,s:{b:4,f:600},x:{b:-10,f:-1200}},
+  {t:"不理",b:-2,f:-100} ]},
+{c:"誤",t:"你把某選區的開票進度百分比打超過 100%。",o:[
+  {t:"更正並附中選會資料",b:2,f:300},
+  {t:"撤掉數字",risk:true,p:0.25,s:{b:2,f:300},x:{b:-11,f:-1400}},
+  {t:"硬拗灌票",risk:true,p:0.2,s:{b:2,f:300},x:{b:-13,f:-1700}} ]},
+{c:"誤",t:"你把一段背景音樂的版權標示掛錯人。",o:[
+  {t:"更正出處並致歉",b:1,f:200},
+  {t:"默默改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-9,f:-1200}},
+  {t:"當沒人查",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"誤",t:"你把某節目的首播與重播時間寫顛倒。",o:[
+  {t:"更正並附節目表",b:1,f:200},
+  {t:"留言置頂更正",b:2,f:300},
+  {t:"當沒差",risk:true,p:0.2,s:{b:2,f:300},x:{b:-10,f:-1300}} ]},
+
+/* -- 炎上 -- */
+{c:"炎上",t:"你為了衝流量下了一個明顯誇大的標題，被整個社群圍剿。",o:[
+  {t:"改成精準標題並道歉",b:1,f:200},
+  {t:"硬說點進來就懂",risk:true,p:0.25,s:{b:5,f:900},x:{b:-14,f:-1900}},
+  {t:"下架重發",b:0,f:100} ]},
+{c:"炎上",t:"你回覆網友時打了一句很酸的話，被截圖瘋傳。",o:[
+  {t:"公開道歉並收回",b:2,f:400},
+  {t:"解釋是開玩笑",risk:true,p:0.35,s:{b:5,f:800},x:{b:-12,f:-1500}},
+  {t:"硬剛「不然勒」",risk:true,p:0.2,s:{b:3,f:500},x:{b:-15,f:-2000}} ]},
+{c:"炎上",t:"你用的對比圖被抓出其實是不同時間、不同地點。",o:[
+  {t:"下架並說明查證疏失",b:-1,f:200},
+  {t:"補字說明",risk:true,p:0.35,s:{b:4,f:600},x:{b:-12,f:-1500}},
+  {t:"硬說大致相符",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1800}} ]},
+{c:"炎上",t:"你蹭了一個國際悲劇哏，被罵消費他人苦難。",o:[
+  {t:"立刻刪文＋誠懇道歉",b:-1,f:200},
+  {t:"解釋想喚起關注",risk:true,p:0.3,s:{b:5,f:800},x:{b:-14,f:-1900}},
+  {t:"硬留著",risk:true,p:0.15,s:{b:2,f:300},x:{b:-16,f:-2200}} ]},
+{c:"炎上",t:"你的投票選項被指設計成只能選你想要的答案。",o:[
+  {t:"重做中立版並說明",b:3,f:400},
+  {t:"下架道歉",b:1,f:200},
+  {t:"硬說沒引導",risk:true,p:0.3,s:{b:4,f:600},x:{b:-12,f:-1500}} ]},
+{c:"炎上",t:"你把一位素人的臉沒打碼就放上新聞，對方要求下架。",o:[
+  {t:"立刻下架並致歉",b:0,f:200},
+  {t:"補打碼不聲明",risk:true,p:0.2,s:{b:2,f:300},x:{b:-15,f:-2000}},
+  {t:"硬說是公共場所",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1900}} ]},
+{c:"炎上",t:"你誤把一則惡搞假新聞當真轉發，被打臉。",o:[
+  {t:"下架並刊更正啟事",b:-1,f:200},
+  {t:"默默刪",risk:true,p:0.25,s:{b:3,f:400},x:{b:-13,f:-1700}},
+  {t:"硬拗來源可靠",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1900}} ]},
+{c:"炎上",t:"你的貼文被指用詞對原住民不尊重。",o:[
+  {t:"虛心道歉並修正",b:2,f:400},
+  {t:"說明原意並致歉",risk:true,p:0.4,s:{b:6,f:1000},x:{b:-13,f:-1700}},
+  {t:"硬剛玻璃心",risk:true,p:0.2,s:{b:3,f:500},x:{b:-16,f:-2200}} ]},
+{c:"炎上",t:"你把一段感人故事加油添醋，被當事人出來打臉造假。",o:[
+  {t:"下架並公開致歉",b:-2,f:100},
+  {t:"解釋是潤飾",risk:true,p:0.25,s:{b:4,f:700},x:{b:-16,f:-2200}},
+  {t:"硬說大方向沒錯",risk:true,p:0.2,s:{b:2,f:300},x:{b:-15,f:-2000}} ]},
+{c:"炎上",t:"你的限動不小心被網友截到你在罵奧客。",o:[
+  {t:"道歉並反省",b:1,f:200},
+  {t:"自嘲小編也是人",risk:true,p:0.5,s:{b:7,f:1100},x:{b:-9,f:-1100}},
+  {t:"硬剛那客人活該",risk:true,p:0.2,s:{b:3,f:500},x:{b:-14,f:-1900}} ]},
+{c:"炎上",t:"你的新聞被控助長詐騙話術，警政單位發文提醒。",o:[
+  {t:"更新內文並附反詐資訊",b:3,f:500},
+  {t:"補一句提醒",risk:true,p:0.35,s:{b:4,f:700},x:{b:-12,f:-1500}},
+  {t:"硬說只是陳述",risk:true,p:0.2,s:{b:2,f:300},x:{b:-13,f:-1700}} ]},
+{c:"炎上",t:"你把一張災難現場照用很美的濾鏡，被罵不尊重。",o:[
+  {t:"換原圖並道歉",b:0,f:200},
+  {t:"解釋想呈現震撼",risk:true,p:0.3,s:{b:5,f:800},x:{b:-13,f:-1700}},
+  {t:"硬留著",risk:true,p:0.15,s:{b:2,f:300},x:{b:-15,f:-2000}} ]},
+{c:"炎上",t:"你回了一句被解讀成性別歧視的玩笑，炎上。",o:[
+  {t:"道歉並刪文",b:1,f:200},
+  {t:"解釋無惡意",risk:true,p:0.35,s:{b:5,f:800},x:{b:-13,f:-1700}},
+  {t:"硬剛不能開玩笑",risk:true,p:0.2,s:{b:3,f:500},x:{b:-15,f:-2100}} ]},
+{c:"炎上",t:"你的標題把受害者寫得像加害者，家屬抗議。",o:[
+  {t:"下架重寫＋致歉",b:-1,f:200},
+  {t:"改標題補救",risk:true,p:0.4,s:{b:4,f:700},x:{b:-13,f:-1700}},
+  {t:"硬說字面沒錯",risk:true,p:0.2,s:{b:2,f:300},x:{b:-16,f:-2200}} ]},
+{c:"炎上",t:"你誤發了尚未求證的死訊，當事人出面說還好好的。",o:[
+  {t:"下架＋鄭重道歉",b:-3,f:100},
+  {t:"狡辯來源可靠",risk:true,p:0.15,s:{b:2,f:300},x:{b:-19,f:-2800}},
+  {t:"刪文消失",risk:true,p:0.2,s:{b:2,f:300},x:{b:-16,f:-2300}} ]},
+{c:"炎上",t:"你把網友的二創當自己原創發，被原作抓包。",o:[
+  {t:"標註原作並公開道歉",b:1,f:200},
+  {t:"下架並私訊致歉",b:2,f:300},
+  {t:"硬說是致敬",risk:true,p:0.2,s:{b:2,f:300},x:{b:-15,f:-2000}} ]},
+{c:"炎上",t:"你的貼文被指煽動地域歧視，南北網友都在罵。",o:[
+  {t:"道歉並發平衡補述",b:2,f:400},
+  {t:"解釋只是玩笑",risk:true,p:0.3,s:{b:5,f:800},x:{b:-13,f:-1700}},
+  {t:"硬剛事實如此",risk:true,p:0.2,s:{b:3,f:500},x:{b:-15,f:-2100}} ]},
+{c:"炎上",t:"你用一位未成年受害者的姓名當標題被嚴正抗議。",o:[
+  {t:"下架改匿名＋致歉",b:-1,f:200},
+  {t:"補救打碼",risk:true,p:0.3,s:{b:4,f:600},x:{b:-15,f:-2100}},
+  {t:"硬說有新聞價值",risk:true,p:0.15,s:{b:2,f:300},x:{b:-17,f:-2400}} ]},
+{c:"炎上",t:"你把廠商的業配做得太像新聞，被控置入未揭露。",o:[
+  {t:"補上合作揭露並道歉",b:1,f:200},
+  {t:"下架重發標明",b:2,f:300},
+  {t:"硬說只是報導",risk:true,p:0.2,s:{b:2,f:300},x:{b:-16,f:-2200}} ]},
+{c:"炎上",t:"你的即時快訊用詞太聳動，被控製造社會恐慌。",o:[
+  {t:"改用中性詞並附官方",b:3,f:500},
+  {t:"補充說明無意恐慌",b:1,f:200},
+  {t:"硬說只是示警",risk:true,p:0.3,s:{b:4,f:600},x:{b:-12,f:-1500}} ]},
+{c:"炎上",t:"你把宗教節慶寫錯又配錯圖，信眾集體抗議。",o:[
+  {t:"更正並尊重致歉",b:1,f:200},
+  {t:"默默改",risk:true,p:0.3,s:{b:3,f:400},x:{b:-12,f:-1500}},
+  {t:"硬拗手滑",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1800}} ]},
+{c:"炎上",t:"你誤刪了一位網友求助走失家人的貼文，對方崩潰。",o:[
+  {t:"重發並公開道歉協尋",risk:true,p:0.55,s:{b:7,f:1200},x:{b:-8,f:-1000}},
+  {t:"低調重發",risk:true,p:0.3,s:{b:3,f:400},x:{b:-12,f:-1500}},
+  {t:"推給系統",risk:true,p:0.2,s:{b:2,f:300},x:{b:-13,f:-1700}} ]},
+{c:"炎上",t:"你的貼文被控歧視精神疾病患者，團體發聲明。",o:[
+  {t:"道歉並附衛教資訊",b:2,f:400},
+  {t:"解釋用詞不當",risk:true,p:0.4,s:{b:5,f:800},x:{b:-12,f:-1500}},
+  {t:"硬剛太敏感",risk:true,p:0.2,s:{b:3,f:500},x:{b:-15,f:-2100}} ]},
+{c:"炎上",t:"你轉發了一張侵犯隱私的偷拍照衝流量。",o:[
+  {t:"立刻下架並致歉",b:-1,f:200},
+  {t:"打碼後保留",risk:true,p:0.25,s:{b:4,f:700},x:{b:-15,f:-2000}},
+  {t:"硬說是公眾人物",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1900}} ]},
+{c:"炎上",t:"你把一句政治人物的話斷章取義做標題，被兩邊罵。",o:[
+  {t:"貼出完整上下文澄清",b:3,f:500},
+  {t:"改標題道歉",b:1,f:200},
+  {t:"硬說沒斷章",risk:true,p:0.25,s:{b:4,f:700},x:{b:-14,f:-1900}} ]},
+{c:"炎上",t:"你的抽獎把個資蒐集寫得不清不楚，被質疑違法。",o:[
+  {t:"下架修正並說明用途",b:1,f:200},
+  {t:"補上隱私條款",b:2,f:300},
+  {t:"硬說沒問題",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1900}} ]},
+{c:"炎上",t:"你用一段未授權的電影片段做哏，片商發函。",o:[
+  {t:"下架並致歉",b:0,f:100},
+  {t:"換自製素材",b:1,f:200},
+  {t:"硬說合理使用",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1900}} ]},
+{c:"炎上",t:"你把一位長者受訪的口音做成嘲笑梗，被罵不尊重。",o:[
+  {t:"下架並誠懇道歉",b:0,f:200},
+  {t:"解釋無惡意",risk:true,p:0.3,s:{b:5,f:800},x:{b:-13,f:-1700}},
+  {t:"硬留著",risk:true,p:0.15,s:{b:2,f:300},x:{b:-15,f:-2000}} ]},
+{c:"炎上",t:"你的貼文被控美化犯罪者，社會譁然。",o:[
+  {t:"下架重寫並道歉",b:-1,f:200},
+  {t:"補平衡觀點",risk:true,p:0.35,s:{b:5,f:800},x:{b:-13,f:-1700}},
+  {t:"硬說只是報導",risk:true,p:0.2,s:{b:2,f:300},x:{b:-15,f:-2000}} ]},
+{c:"炎上",t:"你誤發了一則只有「測試測試」的空貼文還被瘋狂截圖。",o:[
+  {t:"秒刪＋幽默自首",risk:true,p:0.55,s:{b:7,f:1100},x:{b:-7,f:-800}},
+  {t:"假裝是互動",risk:true,p:0.35,s:{b:5,f:800},x:{b:-10,f:-1200}},
+  {t:"甩鍋手機",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"炎上",t:"你把兩個政黨的政策張冠李戴，雙方都發聲明抗議。",o:[
+  {t:"更正並公開致歉",b:1,f:200},
+  {t:"補正確對照",risk:true,p:0.4,s:{b:4,f:700},x:{b:-12,f:-1500}},
+  {t:"硬拗差不多",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1900}} ]},
+{c:"炎上",t:"你把一位公眾人物的舊黑料翻出來蹭，被控消費。",o:[
+  {t:"下架並道歉",b:0,f:200},
+  {t:"解釋有新聞性",risk:true,p:0.3,s:{b:5,f:800},x:{b:-13,f:-1700}},
+  {t:"硬留著衝量",risk:true,p:0.2,s:{b:3,f:500},x:{b:-15,f:-2000}} ]},
+{c:"炎上",t:"你的貼文被控造成一位網友被網路霸凌，對方發聲求助。",o:[
+  {t:"下架並公開致歉＋呼籲停止",b:-1,f:300},
+  {t:"發聲明說依事實",risk:true,p:0.3,s:{b:5,f:800},x:{b:-16,f:-2200}},
+  {t:"沉默",risk:true,p:0.2,s:{b:2,f:300},x:{b:-15,f:-2100}} ]},
+{c:"炎上",t:"你把某慈善活動的捐款數字誇大，被主辦澄清。",o:[
+  {t:"更正數字並致歉",b:1,f:200},
+  {t:"補上正確徵信",b:2,f:300},
+  {t:"硬拗概估",risk:true,p:0.2,s:{b:2,f:300},x:{b:-13,f:-1700}} ]},
+{c:"炎上",t:"你把一句方言寫成錯字被解讀成嘲諷某族群。",o:[
+  {t:"更正並尊重道歉",b:1,f:200},
+  {t:"解釋只是音譯",risk:true,p:0.35,s:{b:4,f:700},x:{b:-12,f:-1500}},
+  {t:"硬剛想太多",risk:true,p:0.2,s:{b:3,f:500},x:{b:-14,f:-1900}} ]},
+{c:"炎上",t:"你的貼文被控用恐怖畫面博眼球，兒少團體關切。",o:[
+  {t:"改用示意圖並道歉",b:1,f:200},
+  {t:"補上觀看提醒",risk:true,p:0.4,s:{b:4,f:700},x:{b:-11,f:-1400}},
+  {t:"硬說是真實呈現",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1900}} ]},
+{c:"炎上",t:"你誤把內部文件浮水印一起截圖發出，洩漏來源。",o:[
+  {t:"秒刪＋低調致歉",risk:true,p:0.5,s:{b:6,f:900},x:{b:-9,f:-1100}},
+  {t:"推給系統",risk:true,p:0.25,s:{b:4,f:600},x:{b:-13,f:-1700}},
+  {t:"當沒事",risk:true,p:0.2,s:{b:2,f:300},x:{b:-13,f:-1700}} ]},
+{c:"炎上",t:"你的標題玩諧音玩到踩性騷敏感神經，被罵輕浮。",o:[
+  {t:"改標題並道歉",b:1,f:200},
+  {t:"下架重寫",b:0,f:100},
+  {t:"硬說只是好玩",risk:true,p:0.2,s:{b:3,f:500},x:{b:-15,f:-2000}} ]},
+{c:"炎上",t:"你把一位運動員輸球的表情做成嘲諷梗圖。",o:[
+  {t:"下架並致歉",b:0,f:200},
+  {t:"解釋是致敬努力",risk:true,p:0.3,s:{b:5,f:800},x:{b:-13,f:-1700}},
+  {t:"硬留著",risk:true,p:0.15,s:{b:2,f:300},x:{b:-15,f:-2000}} ]},
+{c:"炎上",t:"你的貼文被控帶風向替特定企業護航，網友出征。",o:[
+  {t:"下架並說明立場中立",b:1,f:200},
+  {t:"補上各方說法",b:3,f:400},
+  {t:"硬剛沒收錢",risk:true,p:0.3,s:{b:5,f:900},x:{b:-14,f:-1900}} ]},
+{c:"炎上",t:"你在官方帳號手滑按讚一則成人內容，被網友截圖。",o:[
+  {t:"坦承手滑並道歉",risk:true,p:0.5,s:{b:6,f:900},x:{b:-9,f:-1100}},
+  {t:"推給帳號被盜",risk:true,p:0.25,s:{b:4,f:600},x:{b:-13,f:-1700}},
+  {t:"當沒這回事",risk:true,p:0.2,s:{b:2,f:300},x:{b:-13,f:-1700}} ]},
+{c:"炎上",t:"你把兩起不相關案件湊成「連續犯」報導，被打臉。",o:[
+  {t:"下架並更正說明",b:-1,f:200},
+  {t:"補字澄清",risk:true,p:0.35,s:{b:4,f:600},x:{b:-12,f:-1500}},
+  {t:"硬拗有關聯",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1900}} ]},
+{c:"炎上",t:"你的梗圖被指歧視特定職業，相關工會發聲。",o:[
+  {t:"下架並致歉",b:0,f:200},
+  {t:"解釋只是玩笑",risk:true,p:0.3,s:{b:5,f:800},x:{b:-12,f:-1500}},
+  {t:"硬剛開不起玩笑",risk:true,p:0.2,s:{b:3,f:500},x:{b:-15,f:-2000}} ]},
+{c:"炎上",t:"你把一位當事人的求救誤判成炒作，事後證實是真的。",o:[
+  {t:"公開道歉並補正",b:-1,f:300},
+  {t:"低調更新",risk:true,p:0.3,s:{b:4,f:600},x:{b:-14,f:-1900}},
+  {t:"硬拗當下合理",risk:true,p:0.2,s:{b:2,f:300},x:{b:-15,f:-2000}} ]},
+{c:"炎上",t:"你的貼文被控洩漏偵查不公開的內容，檢方關切。",o:[
+  {t:"下架並說明已更正",b:-1,f:200},
+  {t:"保留但移除敏感段",risk:true,p:0.3,s:{b:4,f:600},x:{b:-14,f:-1900}},
+  {t:"硬說知的權利",risk:true,p:0.2,s:{b:2,f:300},x:{b:-15,f:-2100}} ]},
+
+/* -- 日常 -- */
+{c:"日常",t:"主管說這個月數據漂亮，發了小獎金給你。",o:[
+  {t:"發文謝粉絲一起慶祝",risk:true,p:0.65,s:{b:8,f:1300},x:{b:-3,f:-300}},
+  {t:"低調收下繼續做",b:3,f:400},
+  {t:"得意忘形亂發",risk:true,p:0.25,s:{b:4,f:700},x:{b:-9,f:-1100}} ]},
+{c:"日常",t:"你發現一個冷門但很暖的故事，流量可能不高。",o:[
+  {t:"用心做深度報導",risk:true,p:0.55,s:{b:9,f:1400},x:{b:-4,f:-400},hint:"賭口碑"},
+  {t:"簡單帶過",b:1,f:100},
+  {t:"放棄做熱門的",b:-1,f:200} ]},
+{c:"日常",t:"新人來請教你怎麼面對酸民，想聽真心話。",o:[
+  {t:"分享心法好好帶他",b:3,f:400},
+  {t:"教他直接開嗆",risk:true,p:0.3,s:{b:5,f:900},x:{b:-9,f:-1100}},
+  {t:"敷衍帶過",b:-2,f:-100} ]},
+{c:"日常",t:"公司換了新的發文系統，你得重新適應。",o:[
+  {t:"先摸熟再上線",b:3,f:300},
+  {t:"硬著頭皮直接發",risk:true,p:0.4,s:{b:6,f:1000},x:{b:-9,f:-1100}},
+  {t:"停更抱怨",b:-3,f:-300} ]},
+{c:"日常",t:"有媒體系學生來實習，想看你一天怎麼工作。",o:[
+  {t:"認真示範完整流程",risk:true,p:0.6,s:{b:8,f:1300},x:{b:-4,f:-400}},
+  {t:"簡單介紹",b:3,f:400},
+  {t:"沒空理",b:-2,f:-200} ]},
+{c:"日常",t:"粉絲破了一個里程碑，留言敲碗要你抽獎。",o:[
+  {t:"辦一個透明的小抽獎",risk:true,p:0.6,s:{b:8,f:1400},x:{b:-5,f:-500}},
+  {t:"發文感謝先",b:3,f:400},
+  {t:"忙到之後再說",b:-2,f:-200} ]},
+{c:"日常",t:"主管丟來一個很硬的即時挑戰當試煉。",o:[
+  {t:"冷靜拆解認真扛",risk:true,p:0.55,s:{b:9,f:1500},x:{b:-7,f:-800}},
+  {t:"做保守版求穩",b:2,f:300},
+  {t:"推回去",b:-3,f:-300} ]},
+{c:"日常",t:"你靈機一動想到一個時事哏，但有點擦邊。",o:[
+  {t:"修到安全再發",risk:true,p:0.55,s:{b:8,f:1300},x:{b:-6,f:-700}},
+  {t:"先問主管",b:2,f:300},
+  {t:"怕出事放棄",b:-1,f:0} ]},
+{c:"日常",t:"同事午休揪你去買咖啡順便透氣。",o:[
+  {t:"好好休息回血",b:5,f:200},
+  {t:"帶著手機邊走邊發",risk:true,p:0.5,s:{b:7,f:1200},x:{b:-6,f:-700}},
+  {t:"不去硬撐",b:-2,f:-100} ]},
+{c:"日常",t:"有品牌找你合作，條件不錯但要配合話術。",o:[
+  {t:"接但堅持清楚揭露",b:2,f:300},
+  {t:"照話術來不揭露",risk:true,p:0.2,s:{b:5,f:900},x:{b:-16,f:-2200}},
+  {t:"婉拒保公信",b:3,f:500} ]},
+{c:"日常",t:"演算法大改版，你的影片觸及又被砍。",o:[
+  {t:"研究新規則調整",b:3,f:400},
+  {t:"狂洗版賭觸及",risk:true,p:0.35,s:{b:7,f:1100},x:{b:-9,f:-1100}},
+  {t:"擺爛等它好",b:-4,f:-500} ]},
+{c:"日常",t:"你收到一封超長的建議信，網友認真給意見。",o:[
+  {t:"認真讀並回覆",risk:true,p:0.6,s:{b:8,f:1300},x:{b:-3,f:-300}},
+  {t:"簡單道謝",b:3,f:400},
+  {t:"已讀不回",b:-2,f:-200} ]},
+{c:"日常",t:"下班前還有十分鐘，可以收工或再拚一篇。",o:[
+  {t:"穩穩收尾",b:3,f:300},
+  {t:"賭最後一篇爆款",risk:true,p:0.45,s:{b:8,f:1400},x:{b:-7,f:-800}},
+  {t:"提早開溜",b:-3,f:-300} ]},
+{c:"日常",t:"主管問你要不要去跑一條需要外出的現場。",o:[
+  {t:"扛起來去跑",risk:true,p:0.55,s:{b:9,f:1500},x:{b:-6,f:-700}},
+  {t:"留守顧後台",b:2,f:300},
+  {t:"推給別人",b:-2,f:-200} ]},
+{c:"日常",t:"有粉絲做了一支超用心的生日祝福影片給小編。",o:[
+  {t:"公開分享並致謝",risk:true,p:0.65,s:{b:8,f:1300},x:{b:-3,f:-300}},
+  {t:"真心留言感謝",b:3,f:400},
+  {t:"忙到忘了回",b:-2,f:-200} ]},
+{c:"日常",t:"公司要你嘗試經營一個新的短影音帳號。",o:[
+  {t:"規劃好定位再開",b:3,f:400},
+  {t:"馬上狂發賭爆紅",risk:true,p:0.35,s:{b:7,f:1200},x:{b:-8,f:-1000}},
+  {t:"拖著不想弄",b:-3,f:-200} ]},
+
+/* -- 魔王級 -- */
+{c:"炎上",hard:true,t:"你手上有一段疑似高官貪污的錄音，無法百分百確認真偽，發了可能挨告、不發可能被說掩蓋。",o:[
+  {t:"交查證小組＋等第二來源",b:-6,f:300,hint:"穩，但聲量重傷"},
+  {t:"馬上獨家播出",risk:true,p:0.2,s:{b:14,f:2900},x:{b:-24,f:-3600},hint:"賭對轟動、賭錯挨告"},
+  {t:"發「疑似」模糊處理",risk:true,p:0.3,s:{b:8,f:1600},x:{b:-18,f:-2600}} ]},
+{c:"爭議",hard:true,t:"一位網友在你直播留言預告要做傻事並點名要你關注，收視正在飆，但這是人命關天。",o:[
+  {t:"立刻私訊安撫＋通報警消",b:-4,f:800,hint:"正確但沒收視紅利"},
+  {t:"開鏡頭持續追蹤衝收視",risk:true,p:0.12,s:{b:13,f:2600},x:{b:-26,f:-3900},hint:"踩線＝萬劫不復"},
+  {t:"當沒看到不處理",risk:true,p:0.2,s:{b:3,f:400},x:{b:-20,f:-2900}} ]},
+
+{c:"爭議",t:"有人在你貼文下散布某學校集體食物中毒的未證實消息。",o:[
+  {t:"向校方與衛生局求證",b:1,f:200},
+  {t:"直接發新聞",risk:true,p:0.3,s:{b:10,f:1900},x:{b:-16,f:-2300}},
+  {t:"刪留言",b:-2,f:-100} ]},
+{c:"誤",t:"你把某活動的室內場地寫成戶外，民眾淋成落湯雞。",o:[
+  {t:"更正並道歉",b:1,f:200},
+  {t:"留言置頂更正",b:2,f:300},
+  {t:"當沒事",risk:true,p:0.2,s:{b:2,f:300},x:{b:-11,f:-1400}} ]},
+{c:"炎上",t:"你把一段街訪剪得像在嘲笑受訪者，被罵惡意剪輯。",o:[
+  {t:"下架並放完整版致歉",b:-1,f:200},
+  {t:"解釋是篇幅問題",risk:true,p:0.3,s:{b:5,f:800},x:{b:-13,f:-1700}},
+  {t:"硬說沒亂剪",risk:true,p:0.2,s:{b:2,f:300},x:{b:-14,f:-1900}} ]}
+];
+
+/* ---------- 遊戲狀態 ---------- */
+const START_HOUR=9, END_HOUR=18;
+// 每天題數逐日增加：第1天20、第2天25…每天+5，最多40
+function eventsForDay(day){ return Math.min(40, 15 + day*5); }
+const READ_BUFFER=650;              // 讀題緩衝：這段時間不計入倒數（但可提早按）
+const FANS_FLOOR=0;                 // 粉絲歸零也算 game over（第二條命）
+const TIMEOUT_PENALTY={b:-6,f:-500};
+
+// 小編職涯：一天一關，難度逐天遞增（起始容忍度逐天降低、倒數變短、負面加重）
+// 社群容忍度掉到 TOL_FLOOR(30) 就被淘汰（固定底線）
+const MAX_DAY=5;
+const TOL_FLOOR=30;
+const DAYS=[ null,
+  {title:"實習小編", threshold:TOL_FLOOR, timeMult:1.00, penMult:1.05, startBuzz:64},
+  {title:"正職小編", threshold:TOL_FLOOR, timeMult:0.92, penMult:1.18, startBuzz:60},
+  {title:"資深小編", threshold:TOL_FLOOR, timeMult:0.84, penMult:1.32, startBuzz:56},
+  {title:"小編組長", threshold:TOL_FLOOR, timeMult:0.77, penMult:1.46, startBuzz:52},
+  {title:"社群總監", threshold:TOL_FLOOR, timeMult:0.70, penMult:1.62, startBuzz:48} ];
+
+// 最高紀錄（localStorage）
+const BEST_KEY="tvsb_best_v1";
+function loadBest(){ try{return JSON.parse(localStorage.getItem(BEST_KEY))||null;}catch(e){return null;} }
+function saveBest(r){ try{localStorage.setItem(BEST_KEY,JSON.stringify(r));}catch(e){} }
+
+// 成就（localStorage 永久解鎖）
+const ACHS=[
+  {id:"firstday", name:"轉正在望", desc:"撐過第 1 天"},
+  {id:"perfectday", name:"零失誤", desc:"一整天完全沒翻車"},
+  {id:"combo10", name:"手感全開", desc:"單局連勝 10"},
+  {id:"clutch", name:"鬼門關前", desc:"容忍度曾逼近 30 又活到當天下班"},
+  {id:"fans50k", name:"小編網紅", desc:"粉絲達到 50,000"},
+  {id:"score5k", name:"績效王", desc:"單局職涯總分破 5,000"},
+  {id:"veteran", name:"資深社畜", desc:"累積上班 10 局"},
+  {id:"director", name:"社群總監", desc:"職涯全破（撐過第 5 天）"}
+];
+const ACH_KEY="tvsb_ach_v1", PLAYS_KEY="tvsb_plays_v1";
+function loadAch(){ try{return new Set(JSON.parse(localStorage.getItem(ACH_KEY))||[]);}catch(e){return new Set();} }
+function saveAch(set){ try{localStorage.setItem(ACH_KEY,JSON.stringify([...set]));}catch(e){} }
+let achSet=loadAch();
+function unlockAch(id){
+  if(achSet.has(id)) return;
+  achSet.add(id); saveAch(achSet);
+  const a=ACHS.find(x=>x.id===id);
+  if(a) achToast(a.name);
+}
+let achQueue=[], achBusy=false;
+function achToast(name){
+  achQueue.push(name);
+  if(achBusy) return;
+  const run=()=>{
+    if(!achQueue.length){ achBusy=false; return; }
+    achBusy=true;
+    const el=$("achToast");
+    el.textContent="成就解鎖　"+achQueue.shift();
+    el.classList.add("show"); sUnlock();
+    setTimeout(()=>{ el.classList.remove("show"); setTimeout(run,300); },2200);
+  };
+  run();
+}
+
+// 倒數時間隨「題目＋選項字數」動態調整，長題給多一點時間（公平性）
+function decideTimeFor(ev){
+  let chars=ev.t.length;
+  ev.o.forEach(o=>chars+=o.t.length+(o.hint?o.hint.length:0));
+  return Math.max(4200, Math.min(9000, 2400 + chars*70));
+}
+
+// 可學習規則：誠實處理（道歉/更正/澄清…）成功率偏高；硬凹/裝死/甩鍋偏低
+const SAFE_RE=/(道歉|致歉|更正|澄清|說明|感謝|致謝|虛心|坦承|認錯|聯繫|重做|重寫|修正|補上|補回|挽留|溝通|自首|自嘲)/;
+const RISK_RE=/(硬|狡辯|甩鍋|裝|不理|已讀|刪文|刪留言|刪掉|消失|推給|冷處理|擺爛|反串|開戰|嗆|剛|沉默|不管|不處理|當沒)/;
+function effectiveProb(opt){
+  let p=opt.p;
+  if(SAFE_RE.test(opt.t)) p+=0.14;
+  if(RISK_RE.test(opt.t)) p-=0.12;
+  return Math.max(0.1,Math.min(0.92,p));
+}
+
+let state=null;
+let tickRAF=null;
+let deck=[], deckPos=0;
+let hardDeck=[], hardPos=0;
+let soundOn=true;
+
+const $=id=>document.getElementById(id);
+
+/* ---------- 音效（WebAudio，無外部檔案） ---------- */
+let actx=null;
+function beep(freq,dur,type){
+  if(!soundOn) return;
+  try{
+    if(!actx) actx=new (window.AudioContext||window.webkitAudioContext)();
+    const o=actx.createOscillator(), g=actx.createGain();
+    o.type=type||"square"; o.frequency.value=freq;
+    g.gain.value=0.05;
+    o.connect(g); g.connect(actx.destination);
+    o.start();
+    g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime+(dur||0.08));
+    o.stop(actx.currentTime+(dur||0.08));
+  }catch(e){}
+}
+const sGood=()=>{beep(660,0.07);setTimeout(()=>beep(880,0.09),70);};
+const sBad =()=>{beep(220,0.12,"sawtooth");};
+const sClick=()=>beep(440,0.04);
+const sTick=()=>beep(1200,0.02);
+const sWarn=()=>{beep(300,0.12,"triangle");setTimeout(()=>beep(300,0.12,"triangle"),150);};
+const sUnlock=()=>{beep(784,0.08);setTimeout(()=>beep(1047,0.12),90);};
+
+/* ---------- 牌堆 ---------- */
+function shuffle(a){
+  for(let i=a.length-1;i>0;i--){
+    const j=Math.floor(rng()* (i+1));
+    [a[i],a[j]]=[a[j],a[i]];
+  }
+  return a;
+}
+// 可重現但多樣的亂數（避免 Math.random 限制？此處一般頁面可用 Math.random）
+function rng(){ return Math.random(); }
+const NORMAL_EVENTS=EVENTS.filter(e=>!e.hard);
+const HARD_EVENTS=EVENTS.filter(e=>e.hard);
+function drawEvent(){
+  if(deck.length===0 || deckPos>=deck.length){ deck=shuffle(NORMAL_EVENTS.slice()); deckPos=0; }
+  return deck[deckPos++];
+}
+function drawBoss(){
+  if(hardDeck.length===0 || hardPos>=hardDeck.length){ hardDeck=shuffle(HARD_EVENTS.slice()); hardPos=0; }
+  return hardDeck[hardPos++];
+}
+
+/* ---------- 遊戲流程 ---------- */
+function startGame(){
+  state={fans:12000, score:0, day:1, over:false};
+  try{ const p=(parseInt(localStorage.getItem(PLAYS_KEY)||"0",10)+1); localStorage.setItem(PLAYS_KEY,String(p)); if(p>=10) unlockAch("veteran"); }catch(e){}
+  const h=$("homeScreen"); if(h) h.classList.add("hidden");
+  $("overlay").classList.add("hidden");
+  startDay(1);
+}
+function startDay(day){
+  const cfg=DAYS[day];
+  state.day=day;
+  state.threshold=cfg.threshold;
+  state.penMult=cfg.penMult;
+  state.timeMult=cfg.timeMult;
+  state.buzz=cfg.startBuzz;
+  state.eventsToday=eventsForDay(day);
+  state.idx=0; state.combo=0; state.badStreak=0; state.over=false;
+  state.phase="read"; state.cur=null; state.dayFaults=0; state.dayPerfect=true;
+  state.maxCombo=0; state.wasCritical=false;
+  deck=shuffle(NORMAL_EVENTS.slice()); deckPos=0;
+  hardDeck=shuffle(HARD_EVENTS.slice()); hardPos=0;
+  // 魔王題保證出現：最後一題必為魔王，天數越高越多
+  const n=state.eventsToday;
+  state.bossSlots=new Set([n]);
+  if(day>=2) state.bossSlots.add(Math.round(n*0.6));
+  if(day>=4) state.bossSlots.add(Math.round(n*0.3));
+  $("overlay").classList.add("hidden");
+  $("feed").innerHTML="";
+  $("threads").innerHTML="";
+  for(let i=0;i<5;i++) addComment(pick(CM_AMBIENT));
+  startAmbientComments();
+  pushFeed(`第 ${day} 天開工：${cfg.title}，底線 ${cfg.threshold}！`,"");
+  updateCombo(); renderStats(); renderClock(); renderHUD();
+  nextEvent();
+}
+function endDay(){
+  cancelAnimationFrame(tickRAF);
+  // 當日結算加分：守住的聲量 + 存活獎勵（天數加權）
+  const dayBonus = Math.round(state.buzz)*5*state.day + 300*state.day + (state.dayPerfect?500*state.day:0);
+  addScore(dayBonus);
+  // 成就檢查
+  unlockAch("firstday");
+  if(state.dayPerfect) unlockAch("perfectday");
+  if(state.wasCritical) unlockAch("clutch");
+  if(state.score>=5000) unlockAch("score5k");
+  if(state.day>=MAX_DAY){ endRun(true,"clear"); return; }
+  showInterstitial(state.day, state.day+1, dayBonus);
+}
+function addScore(n){
+  state.score=Math.max(0,state.score+n);
+  renderHUD();
+}
+
+function nextEvent(){
+  if(state.over) return;
+  if(state.idx>=state.eventsToday){ endDay(); return; }
+  state.idx++;
+  state.cur = state.bossSlots.has(state.idx) ? drawBoss() : drawEvent();
+  renderEvent(state.cur);
+  renderClock();
+  // 兩階段：先讀題緩衝（可提早按），緩衝後才開始倒數計時（魔王題時間更緊）
+  const dt=decideTimeFor(state.cur)*state.timeMult*(state.cur.hard?0.82:1);
+  state.phase="read";
+  state.readLeft=READ_BUFFER;      // 剩餘讀題緩衝（毫秒）
+  state.decideLeft=dt;             // 剩餘作答時間（毫秒）
+  state.decideLen=dt;
+  // 不鎖按鈕：新題一出現就能按（想快就快）
+  $("eventBox").classList.add("reading");
+  runTimerBar();
+}
+
+let lastFrameTs=0;
+function runTimerBar(){
+  cancelAnimationFrame(tickRAF);
+  lastFrameTs=performance.now();
+  let lastTick=-1;
+  function frame(now){
+    let delta=now-lastFrameTs; lastFrameTs=now;
+    if(delta>250) delta=250;          // 夾住大跳動（切分頁/卡頓不會瞬間超時）
+    if(!state || state.over) return;
+    if(state.paused){ tickRAF=requestAnimationFrame(frame); return; }  // 暫停：凍結時間
+    const bar=$("timerIn"), ts=$("timerSec");
+    if(state.phase==="read"){
+      bar.classList.remove("danger");
+      bar.classList.add("reading");
+      bar.style.width="100%";
+      if(ts) ts.textContent="讀題";
+      $("resultLine").innerHTML=`<span class="reading">新題目！可按 1 / 2 / 3（想一下也行，倒數還沒開始）</span>`;
+      state.readLeft-=delta;
+      if(state.readLeft<=0){               // 緩衝結束，倒數開始
+        state.phase="decide";
+        bar.classList.remove("reading");
+        $("eventBox").classList.remove("reading");
+        $("resultLine").innerHTML="";
+        enableChoices();
+        sTick();
+      }
+    }else if(state.phase==="decide"){
+      state.decideLeft-=delta;
+      const left=Math.max(0,state.decideLeft);
+      const el=1-left/state.decideLen;
+      bar.style.width=((left/state.decideLen)*100).toFixed(1)+"%";
+      if(el>0.6) bar.classList.add("danger"); else bar.classList.remove("danger");
+      if(ts) ts.textContent=(left/1000).toFixed(1)+"s";
+      const sec=Math.ceil(left/1000);
+      if(sec!==lastTick){ lastTick=sec; if(sec>0) sTick(); }
+      if(left<=0){ if(ts) ts.textContent=""; onTimeout(); return; }
+    }
+    tickRAF=requestAnimationFrame(frame);
+  }
+  tickRAF=requestAnimationFrame(frame);
+}
+
+/* ---------- 暫停 ---------- */
+function togglePause(){
+  if(!state || state.over) return;
+  state.paused ? resumeGame() : pauseGame();
+}
+function pauseGame(){
+  if(!state || state.over || state.paused) return;
+  state.paused=true;
+  $("pauseScreen").classList.remove("hidden");
+  $("pauseBtn").textContent="繼續";
+}
+function resumeGame(){
+  if(!state || !state.paused) return;
+  state.paused=false;                 // 計時迴圈會自行恢復扣時
+  lastFrameTs=performance.now();
+  $("pauseScreen").classList.add("hidden");
+  $("pauseBtn").textContent="暫停";
+}
+function goHome(){
+  cancelAnimationFrame(tickRAF);
+  state=null;
+  $("pauseScreen").classList.add("hidden");
+  $("overlay").classList.add("hidden");
+  $("pauseBtn").textContent="暫停";
+  const best=loadBest(), el=$("bestLine");
+  if(el) el.textContent = best?`最高紀錄：${fmt(best.score)} 分（${best.title}・第 ${best.day} 天）`:"還沒有紀錄——當第一個傳奇吧！";
+  renderAchHome();
+  $("homeScreen").classList.remove("hidden");
+}
+
+function onTimeout(){
+  if(state.over) return;
+  const o={t:"（猶豫太久…）",b:TIMEOUT_PENALTY.b,f:TIMEOUT_PENALTY.f};
+  applyOutcome(o,"你猶豫太久，錯過黃金時間！",true,true);
+}
+
+function resolveChoice(opt){
+  if(!state || state.over || state.phase==="done") return;   // 僅在已作答後鎖定
+  cancelAnimationFrame(tickRAF);
+  let b,f,bad,msg;
+  if(opt.risk){
+    const success=rng()<effectiveProb(opt);
+    const r=success?opt.s:opt.x;
+    b=r.b; f=r.f; bad=!success;
+    msg=success?"賭對了！風向站在你這邊。":"翻車了…風向整個歪掉。";
+  }else{
+    b=opt.b; f=opt.f; bad=(b<0);
+    msg=b>=0?"穩健操作。":"小有代價，但控制住了。";
+  }
+  applyOutcome({t:opt.t,b,f},msg,bad,false);
+}
+
+function applyOutcome(o,msg,bad,timeout){
+  state.phase="done";
+  // 連勝 combo：連續做對累積，第 3 連以上每次額外加碼；翻車/超時歸零
+  let bonusB=0,bonusF=0,comboMsg="";
+  if(bad){
+    if(state.combo>=3) comboMsg=`　<span class="down">連勝 x${state.combo} 中斷！</span>`;
+    state.combo=0; state.badStreak++;
+  }else{
+    state.combo++; state.badStreak=0;
+    if(state.combo>=3){
+      bonusB=Math.min(5,state.combo-2);
+      bonusF=(state.combo-2)*200;
+      comboMsg=`　<span class="up">連勝 x${state.combo}！加碼 +${bonusB}</span>`;
+    }
+  }
+  let db=o.b+bonusB, df=o.f+bonusF;
+  // 難度：負面後果隨天數加重
+  if(db<0) db=Math.round(db*state.penMult);
+  if(df<0) df=Math.round(df*state.penMult);
+  state.buzz=Math.max(0,Math.min(100,state.buzz+db));
+  state.fans=Math.max(0,state.fans+df);
+  // 分數：存活＋正向成果＋連勝加權（天數加成）
+  if(bad){ state.dayFaults++; state.dayPerfect=false; }
+  let pts=10*state.day;
+  if(db>0) pts+=db*15;
+  if(df>0) pts+=Math.round(df/40);
+  if(!bad && state.combo>=3) pts+=state.combo*8;
+  addScore(pts);
+  // feed
+  const sign=db>0?`<b class="up">容忍度+${db}</b>`:(db<0?`<b class="down">容忍度${db}</b>`:`容忍度±0`);
+  const fsign=df>0?`粉絲+${df}`:(df<0?`粉絲${df}`:`粉絲±0`);
+  pushFeed(`${o.t}　${sign}　${fsign}`, bad?"down":"up");
+  // result line
+  const rl=$("resultLine");
+  rl.innerHTML=`<span class="${bad?'down':'up'}">${msg}</span>　容忍度 ${db>=0?'+':''}${db}，粉絲 ${df>=0?'+':''}${df}${comboMsg}`;
+  bad?sBad():sGood();
+  if(bad) triggerShake();
+  updateCombo();
+  setCharMood();
+  renderStats();
+  // 追蹤統計（成就用）
+  if(state.combo>state.maxCombo) state.maxCombo=state.combo;
+  if(state.combo>=10) unlockAch("combo10");
+  if(state.fans>=50000) unlockAch("fans50k");
+  if(state.buzz<=TOL_FLOOR+3) state.wasCritical=true;
+  // 瀕死警示音（進入危險區時響一次）
+  const danger = state.buzz<=TOL_FLOOR+8;
+  if(danger && !state.lowWarned){ sWarn(); state.lowWarned=true; }
+  if(!danger) state.lowWarned=false;
+  // 互動回饋：飄字＋數字跳動＋角色反應＋對話泡泡
+  if(db!==0) floatText("buzzV",`${db>0?'+':''}${db} 容忍度`,db>0);
+  if(df!==0) floatText("fansV",`${df>0?'+':''}${fmt(df)}`,df>0);
+  bumpEl("buzzV"); bumpEl("fansV");
+  reactType = bad?"bad":"good"; reactUntil = performance.now()+950;
+  showBubble(timeout?"timeout":(bad?"bad":"good"));
+  reactComments(bad,timeout);
+  disableChoices(false);
+  if(state.buzz<=TOL_FLOOR){ setTimeout(()=>endRun(false,"buzz"),650); return; }
+  if(state.fans<=FANS_FLOOR){ setTimeout(()=>endRun(false,"fans"),650); return; }
+  setTimeout(()=>nextEvent(),560);
+}
+
+/* ---------- 升職過場 ---------- */
+function showInterstitial(fromDay, toDay, bonus){
+  state.over=true;                 // 暫停目前這天
+  cancelAnimationFrame(tickRAF);
+  const ncfg=DAYS[toDay];
+  const ov=$("overlay"), m=$("modal");
+  ov.classList.remove("hidden");
+  m.innerHTML=`
+    <h1 class="win">第 ${fromDay} 天完成！</h1>
+    <div class="big">▲</div>
+    <p>你撐過了這一天，升職為<br><b style="font-size:20px">${ncfg.title}</b></p>
+    <div class="statline">結算加分 +${fmt(bonus)}　|　總分 ${fmt(state.score)}</div>
+    <div class="rules">
+      ▸ 下一關更硬：起始容忍度更低、倒數更短、負面後果更重。<br>
+      ▸ 容忍度重設為 <b>${ncfg.startBuzz}</b>（掉到 ${TOL_FLOOR} 就淘汰），粉絲延續（目前 ${fmt(state.fans)}）。
+    </div>
+    <button class="startbtn" id="nextDayBtn">進入第 ${toDay} 天</button>`;
+  $("nextDayBtn").onclick=()=>{ sClick(); startDay(toDay); };
+  sGood();
+}
+
+/* ---------- 全局結算（勝/敗）＋最高紀錄＋分享卡 ---------- */
+function endRun(isWin, reason){
+  state.over=true;
+  cancelAnimationFrame(tickRAF);
+  const cfg=DAYS[state.day];
+  const best=loadBest();
+  const isRecord = !best || state.score>best.score;
+  if(isRecord) saveBest({score:state.score, day:state.day, title:cfg.title});
+  if(state.score>=5000) unlockAch("score5k");
+  if(isWin) unlockAch("director");
+
+  let title,icon,cls,p1,p2;
+  if(isWin){   // 全破：撐過第 5 天
+    title="職涯圓滿！"; icon="★"; cls="win";
+    p1=`你一路從實習撐到 <b>社群總監</b>，熬過整整 5 天的腥風血雨。`;
+    p2=`網民為你立廟，同業搶著挖角——你是<b>傳奇小編</b>。`;
+  }else if(reason==="fans"){
+    title="沒人想追蹤你了"; icon="✕"; cls="lose";
+    p1=`粉絲流失見底，官方帳號形同空城。`;
+    p2=`主管嘆氣：「容忍度再高，沒人看也是白搭。」`;
+  }else{
+    title="你被炒魷魚了"; icon="✕"; cls="lose";
+    p1=`社群容忍度掉到 <b>${TOL_FLOOR}</b> 的淘汰線（目前 ${Math.round(state.buzz)}）。`;
+    p2=`主管只丟下一句：「這個月離職率又上升了。」`;
+  }
+
+  const shareText =
+    `TVSB Threads 小編模擬器\n我以【${cfg.title}】撐到第 ${state.day} 天，總分 ${fmt(state.score)}！\n你能撐多久？ #TVSB小編`;
+  const bestHtml = isRecord
+    ? `<div class="record">★ 新紀錄！★</div>`
+    : (best?`<div class="statline">最高紀錄：${fmt(best.score)} 分（${best.title}・第 ${best.day} 天）</div>`:"");
+
+  const ov=$("overlay"), m=$("modal");
+  ov.classList.remove("hidden");
+  m.innerHTML=`
+    <h1 class="${cls}">${title}</h1>
+    <div class="big">${icon}</div>
+    <p>${p1}</p>
+    <p>${p2}</p>
+    <div class="scorecard">
+      <div class="scbig">${fmt(state.score)} <span>分</span></div>
+      <div class="scrow">身分 <b>${cfg.title}</b>　|　抵達 <b>第 ${state.day} 天</b></div>
+      <div class="scrow">容忍度 ${Math.round(state.buzz)}　|　粉絲 ${fmt(state.fans)}</div>
+    </div>
+    ${bestHtml}
+    <textarea id="shareBox" class="sharebox" readonly>${shareText}</textarea>
+    <div class="btnrow">
+      <button class="startbtn alt" id="copyBtn">複製成績</button>
+      <button class="startbtn" id="startBtn">再挑戰</button>
+    </div>`;
+  $("startBtn").onclick=()=>{ sClick(); startGame(); };
+  $("copyBtn").onclick=()=>{ sClick(); copyShare(shareText); };
+  isWin?sGood():sBad();
+}
+function copyShare(txt){
+  const ta=$("shareBox"); if(ta){ ta.focus(); ta.select(); }
+  let ok=false;
+  try{ ok=document.execCommand("copy"); }catch(e){}
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(()=>{},()=>{});
+    ok=true;
+  }
+  const b=$("copyBtn"); if(b) b.textContent = ok?"已複製！":"請按 Ctrl+C";
+}
+
+/* ---------- 畫面渲染 ---------- */
+function renderEvent(ev){
+  $("evTag").textContent=ev.c;
+  $("evTag").className="tag c"+ev.c;
+  const hc=$("hardChip");
+  if(ev.hard){ hc.textContent="魔王級"; hc.className="hardchip on"; }
+  else { hc.textContent=""; hc.className="hardchip"; }
+  $("eventBox").classList.toggle("hardevt",!!ev.hard);
+  $("evNo").textContent=`第${state.day}天 ${state.idx}/${state.eventsToday}`;
+  $("evText").textContent=ev.t;
+  $("resultLine").innerHTML="";
+  const box=$("choices"); box.innerHTML="";
+  ev.o.forEach((opt,i)=>{
+    const btn=document.createElement("button");
+    btn.className="choice";                  // 不給風險顏色提示，完全讓玩家猜
+    btn.innerHTML=`<span class="keynum">${i+1}</span>${opt.t}`;
+    btn.onclick=()=>{ if(!state||state.over||state.phase==="done") return; sClick(); resolveChoice(opt); };
+    box.appendChild(btn);
+  });
+}
+// locked=true 代表讀題緩衝（顯示但不可按）；false 代表作答後鎖定
+function disableChoices(locked){
+  [...document.querySelectorAll(".choice")].forEach(b=>{
+    b.disabled=true; b.style.opacity=locked?0.8:0.5; b.classList.toggle("locked",!!locked);
+  });
+}
+function enableChoices(){
+  [...document.querySelectorAll(".choice")].forEach(b=>{
+    b.disabled=false; b.style.opacity=1; b.classList.remove("locked");
+  });
+}
+function pressKey(n){
+  if(!state||state.over||state.phase==="done") return;
+  const btns=document.querySelectorAll(".choice");
+  if(btns[n]){ btns[n].classList.add("flash"); btns[n].click(); }
+}
+function renderStats(){
+  const b=Math.round(state.buzz);
+  $("buzzV").textContent=b;
+  const bar=$("buzzBar");
+  bar.style.width=b+"%";
+  bar.classList.remove("low","mid");
+  if(b<state.threshold+4) bar.classList.add("low");
+  else if(b<state.threshold+12) bar.classList.add("mid");
+  const th=$("buzzThresh"); if(th) th.style.left=state.threshold+"%";
+  const tt=$("threshTag"); if(tt) tt.textContent=`白線 = ${TOL_FLOOR}，掉到就被淘汰`;
+  const fv=$("fansV");
+  fv.textContent=fmt(state.fans);
+  fv.classList.toggle("low",state.fans<3000);
+  // 瀕死警示：容忍度接近 30 淘汰線
+  const danger = b<=TOL_FLOOR+8 && !state.over;
+  const ti=$("tolItem"); if(ti) ti.classList.toggle("warn",danger);
+  const eb=$("eventBox"); if(eb) eb.classList.toggle("danger",danger);
+}
+function renderHUD(){
+  const s=$("scoreV"); if(s) s.textContent=fmt(state.score);
+  const d=$("dayLabel"); if(d) d.textContent=`第 ${state.day} / ${MAX_DAY} 天 · ${DAYS[state.day].title}`;
+}
+function updateCombo(){
+  const el=$("comboBox");
+  if(!el) return;
+  if(state && state.combo>=2){
+    el.textContent=`連勝 x${state.combo}`;
+    el.className="combo on"+(state.combo>=5?" hot":"");
+  }else{
+    el.textContent="";
+    el.className="combo";
+  }
+}
+function renderClock(){
+  const minPerEvent=(END_HOUR-START_HOUR)*60/state.eventsToday;
+  const totalMin=(state.idx)*minPerEvent;
+  let h=START_HOUR+Math.floor(totalMin/60);
+  let mm=Math.floor(totalMin%60);
+  if(h>END_HOUR){h=END_HOUR;mm=0;}
+  $("clock").textContent=`${String(h).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
+  const hourNo=Math.min(9,Math.floor(totalMin/60)+1);
+  $("clockSub").textContent=`上班第 ${hourNo} 小時`;
+  $("dayFill").style.width=Math.min(100,(state.idx/state.eventsToday)*100)+"%";
+}
+function pushFeed(text,cls){
+  const f=$("feed");
+  const d=document.createElement("div");
+  d.innerHTML=text;
+  f.insertBefore(d,f.firstChild);
+  while(f.children.length>8) f.removeChild(f.lastChild);
+}
+function fmt(n){return n.toLocaleString("en-US");}
+
+/* ---------- 互動回饋：飄字 / 數字跳動 / 對話泡泡 ---------- */
+function floatText(targetId,text,up){
+  const t=$(targetId); if(!t) return;
+  const r=t.getBoundingClientRect();
+  const el=document.createElement("div");
+  el.className="float "+(up?"up":"down");
+  el.textContent=text;
+  el.style.left=(r.left+r.width/2)+"px";
+  el.style.top=(r.top-4)+"px";
+  $("floatLayer").appendChild(el);
+  setTimeout(()=>el.remove(),1000);
+}
+function bumpEl(id){
+  const e=$(id); if(!e) return;
+  e.classList.remove("bump"); void e.offsetWidth; e.classList.add("bump");
+}
+const BUBBLE={
+  good:["穩！","搞定～","這波穩了","YES！","漂亮","收工收工","又是美好的一則","小編無敵"],
+  bad :["慘了…","又出包","完蛋","嗚嗚嗚","我的天","這下燒起來了","救命","主管別看"],
+  timeout:["啊——來不及","手滑了啦","欸等等","腦袋當機"]
+};
+function showBubble(kind){
+  const b=$("bubble"), c=$("scene");
+  const arr=BUBBLE[kind]||BUBBLE.good;
+  b.textContent=arr[Math.floor(rng()*arr.length)];
+  b.style.left=(c.clientWidth*0.60)+"px";
+  b.style.top =(c.clientHeight*0.20)+"px";
+  b.classList.remove("show"); void b.offsetWidth; b.classList.add("show");
+  clearTimeout(b._t); b._t=setTimeout(()=>b.classList.remove("show"),1300);
+}
+
+/* ---------- 即時網友彈幕 ---------- */
+const CM_USERS=["路人甲","鄉民007","吃瓜群眾","夜貓子","柴犬","追劇中","台北人","阿達","熱心網友","看戲的","匿名","小明","不具名","理科太太粉","剛睡醒"];
+const CM_AMBIENT=["沙發","朝聖","笑死","先存再看","+1","這真的假的","蹲後續","樓上冷靜","求懶人包","路過","已轉發","認真問","標題黨","喔喔喔","這則我有印象","小編今天很拼","有人在看嗎","我也是","蛤","突然出現"];
+const CM_GOOD=["小編讚喔","這波滿分","專業給推","加薪啦","太會了吧","這才是小編","帥","理性中立","已關注","穩如老狗","反應好快","教科書等級","小編我可以","拍拍手"];
+const CM_BAD=["又出包了","根本亂做","退追了","這也能錯","小編下班啦","快道歉","炎上預定","截圖存證","這台沒救","品質堪慮","傻眼","誰准你發的","主管在哭","嘻嘻"];
+let cmTimer=null;
+function pick(a){ return a[Math.floor(rng()*a.length)]; }
+function addComment(text,cls){
+  const box=$("threads"); if(!box) return;
+  const d=document.createElement("div");
+  d.className="cm"+(cls?" "+cls:"");
+  d.innerHTML=`<span class="u">@${pick(CM_USERS)}</span> ${text}`;
+  box.appendChild(d);
+  // 移除最舊的，直到整區塞得下 → 只顯示完整行，不會被切一半
+  let guard=0;
+  while(box.children.length>1 && box.scrollHeight>box.clientHeight && guard++<60){
+    box.removeChild(box.firstChild);
+  }
+  while(box.children.length>25) box.removeChild(box.firstChild);
+}
+function startAmbientComments(){
+  if(cmTimer) return;
+  const loop=()=>{
+    if(state && !state.over && !state.paused && !document.hidden) addComment(pick(CM_AMBIENT));
+    cmTimer=setTimeout(loop, 650+rng()*650);
+  };
+  cmTimer=setTimeout(loop, 600);
+}
+function reactComments(bad,timeout){
+  const pool = timeout?CM_BAD:(bad?CM_BAD:CM_GOOD);
+  const cls = bad?"b":"g";
+  const n = 2+Math.floor(rng()*2);
+  for(let i=0;i<n;i++) setTimeout(()=>addComment(pick(pool),cls), i*140);
+}
+
+/* ---------- 角色心情 / 畫面 ---------- */
+let mood="normal";
+let reactType="", reactUntil=0;    // 即時反應：good / bad
+function setCharMood(){
+  const b=state.buzz, th=state.threshold||62;
+  if(b>=85){mood="happy";$("moodState").textContent="心情：超爽";}
+  else if(b>=th+10){mood="normal";$("moodState").textContent="心情：普通";}
+  else if(b>=th+3){mood="worried";$("moodState").textContent="心情：焦慮";}
+  else {mood="panic";$("moodState").textContent="心情：瀕臨崩潰";}
+  $("deskState").textContent = state.over?"下班。":"小編狂敲鍵盤中…";
+}
+
+/* ---------- 像素辦公室場景 ---------- */
+const cv=$("scene"), ctx=cv.getContext("2d");
+ctx.imageSmoothingEnabled=false;
+let shakeT=0;
+function triggerShake(){ shakeT=12; }
+
+const PAL={
+  wall:"#3b4a6b", wallDark:"#33415e", wainscot:"#2d3a57", wainscotDark:"#26324c",
+  trim:"#5a6d96", skirting:"#1e2740", ceiling:"#232c45", ceilingLight:"#aebde0",
+  floor:"#6a4a32", floorDark:"#5a3e2a",
+  windowFrame:"#d7d2c6", skyMorn:"#9fb9e8", skyNoon:"#bfe0f5", skyEve:"#f0b07a",
+  skyDusk:"#44446f", sun:"#ffe14d", moon:"#eef2ff", cloud:"#ffffff",
+  deskTop:"#8a5a38", deskHi:"#a06a44", deskSide:"#6e4529", deskLeg:"#5a3822",
+  rug:"#41568a", rugEdge:"#2f4568", bin:"#6b7390", binDark:"#565d78",
+  monDark:"#1c1c24", monBezel:"#33333f", screen:"#122033", screenLine:"#2f6fe0", led:"#3fb36b",
+  lamp:"#4a4a55", lampBase:"#2a2a33", lampHead:"#e8b53a",
+  paper:"#ece7da", paperLine:"#b9b2a0", penCup:"#394a63", pen1:"#e2362d", pen2:"#2f6fe0", pen3:"#3fb36b",
+  phone:"#1a1a22", phoneScr:"#2f6fe0", sticky:"#e8d24a",
+  plantPot:"#b5603a", plant:"#3fb36b", plant2:"#2d8c52",
+  frameG:"#caa24a", frameInner:"#1b2740", badge:"#2f6fe0", lanyard:"#1f1f2b",
+  skin:"#e8b48c", skinDark:"#caa07a", hair:"#2b2029", shirt:"#e2362d",
+  shirt2:"#b02820", chair:"#242430", chairHi:"#34343f", key:"#c9c6d6", keyDark:"#9a97a8",
+  mug:"#d8d2c4", posterR:"#e2362d", white:"#ffffff", black:"#17141d", sweatC:"#5fd0ff"
+};
+
+let frame=0, lastDraw=0;
+function drawScene(now){
+  requestAnimationFrame(drawScene);        // 永遠先排程：迴圈不會因任何錯誤中斷
+  if(now-lastDraw < 33) return;            // 節流 ~30fps，像素場景不需要 60fps
+  lastDraw=now;
+  frame++;
+  ctx.save();
+  // screen shake when bad
+  let ox=0,oy=0;
+  if(shakeT>0){ ox=(frame%2?1:-1)*2; oy=(frame%3?1:-1); shakeT--; }
+  ctx.clearRect(0,0,320,200);
+  ctx.translate(ox,oy);
+
+  const prog = (state && state.eventsToday) ? Math.min(1,state.idx/state.eventsToday) : 0;
+
+  // ===== 天花板 / 牆 / 地板 =====
+  px(0,0,320,6,PAL.ceiling);
+  for(let x=36;x<320;x+=76) px(x,2,40,2,PAL.ceilingLight);   // 燈條
+  px(0,6,320,96,PAL.wall);
+  ctx.fillStyle=PAL.wallDark;
+  for(let x=0;x<320;x+=48) ctx.fillRect(x,6,2,96);
+  px(0,102,320,38,PAL.wainscot);                             // 腰牆
+  px(0,100,320,3,PAL.trim);
+  px(0,136,320,4,PAL.skirting);                              // 踢腳線
+  px(0,140,320,60,PAL.floor);
+  ctx.fillStyle=PAL.floorDark;
+  for(let y=152;y<200;y+=14) ctx.fillRect(0,y,320,2);
+  for(let x=0;x<320;x+=40) ctx.fillRect(x,140,2,60);
+
+  // ===== 窗戶（天色隨時段變化） =====
+  const sky = prog<0.3?PAL.skyMorn : prog<0.62?PAL.skyNoon : prog<0.85?PAL.skyEve : PAL.skyDusk;
+  px(10,16,72,60,PAL.windowFrame);
+  px(13,19,66,54,sky);
+  const sunx=Math.round(18+prog*52), suny=Math.round(52-Math.sin(prog*Math.PI)*26);
+  px(sunx,suny,8,8, prog>0.85?PAL.moon:PAL.sun);
+  px(24,30,16,4,PAL.cloud); px(52,42,14,4,PAL.cloud);
+  px(44,16,3,60,PAL.windowFrame); px(10,44,72,3,PAL.windowFrame);   // 十字窗櫺
+  px(6,76,80,4,PAL.wainscotDark);                                   // 窗台
+
+  // ===== 掛鐘（指針隨時間走） =====
+  const cxp=112,cyp=28;
+  px(cxp-13,cyp-13,26,26,PAL.black);
+  px(cxp-11,cyp-11,22,22,PAL.white);
+  const hour=9+prog*9;
+  const ha=(hour/12)*6.2832 - 1.5708, ma=((hour%1))*6.2832 - 1.5708;
+  ctx.strokeStyle=PAL.black; ctx.lineWidth=2; ctx.lineCap="butt";
+  ctx.beginPath(); ctx.moveTo(cxp,cyp); ctx.lineTo(cxp+Math.cos(ha)*5,cyp+Math.sin(ha)*5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cxp,cyp); ctx.lineTo(cxp+Math.cos(ma)*8,cyp+Math.sin(ma)*8); ctx.stroke();
+
+  // ===== TVSB 海報 + 相框 =====
+  px(238,14,62,40,PAL.black);
+  px(240,16,58,36,PAL.posterR);
+  ctx.fillStyle=PAL.white; ctx.font="bold 14px monospace"; ctx.textBaseline="top";
+  ctx.fillText("TVSB",248,26);
+  px(248,42,42,2,PAL.white);
+  px(210,22,22,22,PAL.frameG);         // 小相框
+  px(213,25,16,16,PAL.frameInner);
+  px(217,33,8,6,PAL.plant); px(219,29,4,5,PAL.sun);   // 框裡的小圖
+
+  // ===== 書桌 =====
+  px(0,150,320,8,PAL.deskTop);
+  px(0,150,320,2,PAL.deskHi);
+  px(0,158,320,10,PAL.deskSide);
+  px(16,168,8,30,PAL.deskLeg); px(296,168,8,30,PAL.deskLeg);
+
+  // ===== 地毯 + 垃圾桶 + 盆栽 =====
+  px(196,176,116,22,PAL.rug); px(196,176,116,3,PAL.rugEdge);
+  px(10,170,18,26,PAL.bin); px(10,170,18,3,PAL.binDark);
+  px(15,165,9,5,PAL.paper);
+  px(300,120,16,20,PAL.plantPot);      // 牆角高盆栽
+  px(302,96,5,26,PAL.plant); px(308,100,5,22,PAL.plant2); px(305,90,5,12,PAL.plant);
+
+  // ===== 桌面左側小物 =====
+  // 檯燈
+  px(90,140,18,4,PAL.lampBase);
+  px(98,114,3,26,PAL.lamp);
+  px(86,108,18,8,PAL.lampHead);
+  px(89,116,12,3,PAL.lampHead);
+  // 筆筒
+  px(22,138,12,12,PAL.penCup);
+  px(24,128,2,11,PAL.pen1); px(28,126,2,13,PAL.pen2); px(31,130,2,9,PAL.pen3);
+  // 紙堆
+  px(42,143,26,7,PAL.paper);
+  ctx.fillStyle=PAL.paperLine;
+  for(let i=0;i<3;i++) ctx.fillRect(45,145+i*2,20,1);
+  // 手機
+  px(70,140,12,10,PAL.phone); px(72,142,8,6,PAL.phoneScr);
+
+  // ===== 螢幕（居中，彈幕由 #threads 疊上） =====
+  const mx=120,my=70;
+  px(mx-4,my-4,92,64,PAL.monDark);
+  px(mx-2,my-2,88,60,PAL.monBezel);
+  px(mx,my,84,52,PAL.screen);
+  px(mx+40,my-4,4,2,PAL.monDark);                       // 攝影鏡頭
+  px(mx+78,my+54,3,3, prog>0?PAL.led:PAL.monDark);       // 電源燈
+  px(mx+38,my+58,8,8,PAL.monDark);                       // 底座
+  px(mx+28,my+66,28,4,PAL.monDark);
+
+  // ===== 咖啡杯（含蒸氣） =====
+  px(208,138,13,13,PAL.mug); px(221,141,4,6,PAL.mug);
+  if(mood!=="panic"){
+    ctx.fillStyle="rgba(255,255,255,.22)";
+    const s=(frame>>3)%3;
+    ctx.fillRect(211,132-s,2,3); ctx.fillRect(215,129-s,2,3);
+  }
+
+  // ===== 滑鼠 =====
+  px(300,146,10,8,PAL.key); px(304,146,2,4,PAL.keyDark);
+
+  // ===== 座椅靠背（角色後方） =====
+  px(224,148,52,16,PAL.chair);
+  px(224,148,52,3,PAL.chairHi);
+
+  // ===== 角色（移到右側，完整露出） =====
+  const hx=226, hy=96;
+  const reacting = now < reactUntil;
+  const typing = state ? !state.over : true;
+  const t = (typing && !reacting) ? (frame>>3)%2 : 0;
+
+  // 身體（襯衫）
+  px(hx+2,hy+22,36,26,PAL.shirt);
+  px(hx+2,hy+22,36,4,PAL.shirt2);
+  // 識別證吊帶
+  px(hx+14,hy+22,2,10,PAL.lanyard); px(hx+24,hy+22,2,10,PAL.lanyard);
+  px(hx+16,hy+30,8,6,PAL.badge);
+  // 脖子
+  px(hx+14,hy+18,12,6,PAL.skin);
+  // 頭
+  px(hx+8,hy-2,24,22,PAL.skin);
+  px(hx+8,hy+16,24,2,PAL.skinDark);        // 下巴陰影
+  // 頭髮
+  px(hx+6,hy-6,28,10,PAL.hair);
+  px(hx+6,hy+2,4,10,PAL.hair);
+  px(hx+30,hy+2,4,10,PAL.hair);
+  // 眼睛（眨眼）
+  const blink = (frame % 160) < 6;
+  ctx.fillStyle=PAL.black;
+  if(blink){
+    ctx.fillRect(hx+13,hy+9,5,1); ctx.fillRect(hx+22,hy+9,5,1);
+  }else{
+    const ex = (mood==="worried"||mood==="panic") ? 1:0;
+    ctx.fillRect(hx+13+ex,hy+7,3,4); ctx.fillRect(hx+23+ex,hy+7,3,4);
+  }
+  // 嘴巴（反應時覆蓋）
+  ctx.fillStyle=PAL.black;
+  if(reacting && reactType==="good") ctx.fillRect(hx+15,hy+13,10,3);
+  else if(reacting && reactType==="bad") px(hx+17,hy+14,7,4,PAL.black);
+  else if(mood==="happy") ctx.fillRect(hx+15,hy+14,10,2);
+  else if(mood==="normal") ctx.fillRect(hx+16,hy+15,8,1);
+  else if(mood==="worried") ctx.fillRect(hx+16,hy+15,8,2);
+  else px(hx+17,hy+14,7,4,PAL.black);
+
+  // 手臂 / 手
+  ctx.fillStyle=PAL.skin;
+  if(reacting && reactType==="good"){
+    px(hx+2,hy+30,8,12,PAL.shirt); px(hx+2,142,8,6,PAL.skin);
+    px(hx+30,hy+10,8,20,PAL.shirt); px(hx+32,hy+2,8,9,PAL.skin); px(hx+34,hy-3,4,5,PAL.skin);
+  }else if(reacting && reactType==="bad"){
+    px(hx+2,hy+10,8,20,PAL.shirt); px(hx+30,hy+10,8,20,PAL.shirt);
+    px(hx+3,hy-3,7,8,PAL.skin); px(hx+30,hy-3,7,8,PAL.skin);
+  }else{
+    const handY=146 - (t?2:0);
+    px(hx+2,hy+30,8,14,PAL.shirt); px(hx+30,hy+30,8,14,PAL.shirt);
+    px(hx+2,handY,8,6,PAL.skin); px(hx+30,handY-(t?0:2),8,6,PAL.skin);
+  }
+
+  // 鍵盤（角色前方）
+  px(hx-8,146,60,8,PAL.key);
+  px(hx-8,146,60,2,"#e7e4f0");
+  ctx.fillStyle=PAL.keyDark;
+  for(let x=hx-5;x<hx+48;x+=6) ctx.fillRect(x,149,3,2);
+
+  // 反應符號
+  if(reacting && reactType==="good" && (frame>>2)%2){
+    ctx.fillStyle="#ffe14d";
+    ctx.fillRect(hx-4,hy-6,3,3); ctx.fillRect(hx+36,hy-8,3,3);
+  }
+  if(reacting && reactType==="bad"){
+    ctx.fillStyle="#ff6b61";
+    ctx.fillRect(hx-6,hy-8,2,6); ctx.fillRect(hx-6,hy,2,2);
+    ctx.fillRect(hx-2,hy-8,2,6); ctx.fillRect(hx-2,hy,2,2);
+  }
+  if(!reacting && (mood==="worried"||mood==="panic")){
+    const sy=hy+2+((frame>>2)%6); px(hx+32,sy,2,3,PAL.sweatC);
+  }
+  if(!reacting && mood==="panic" && (frame>>2)%2){
+    ctx.fillStyle="#ffd9d6";
+    ctx.fillRect(hx+2,hy-4,2,2); ctx.fillRect(hx+34,hy-4,2,2);
+  }
+
+  // 時段光線：上午偏冷藍，中午轉淡，傍晚轉暖橘（隨時鐘變化，非光暈）
+  if(prog<0.35){
+    ctx.globalAlpha=0.16*(1-prog/0.35);
+    ctx.fillStyle="#2f5fe0"; ctx.fillRect(-4,-2,330,206);
+  }else if(prog>0.6){
+    ctx.globalAlpha=0.22*((prog-0.6)/0.4);
+    ctx.fillStyle="#e07a2a"; ctx.fillRect(-4,-2,330,206);
+  }
+  ctx.globalAlpha=1;
+
+  ctx.restore();
+
+  function px(x,y,w,h,c){ ctx.fillStyle=c; ctx.fillRect(x|0,y|0,w,h); }
+}
+requestAnimationFrame(drawScene);
+
+/* ---------- 綁定 ---------- */
+$("homeStartBtn").onclick=()=>{ sClick(); startGame(); };
+$("pauseBtn").onclick=()=>{ sClick(); togglePause(); };
+$("resumeBtn").onclick=()=>{ sClick(); resumeGame(); };
+$("homeFromPause").onclick=()=>{ sClick(); goHome(); };
+// 切換分頁自動暫停，避免背景計時
+document.addEventListener("visibilitychange",()=>{ if(document.hidden) pauseGame(); });
+$("muteBtn").onclick=()=>{
+  soundOn=!soundOn;
+  $("muteBtn").textContent="音效："+(soundOn?"開":"關");
+  if(soundOn) sClick();
+};
+
+// 鍵盤：1/2/3 選擇、ESC 暫停
+window.addEventListener("keydown",e=>{
+  if(e.key==="Escape"){ e.preventDefault(); togglePause(); return; }
+  if(e.repeat) return;
+  if(state && state.paused) return;
+  if(e.key>="1" && e.key<="3"){ pressKey(parseInt(e.key,10)-1); }
+});
+
+// 初始心情顯示
+$("moodState").textContent="心情：待命";
+
+// 首頁成就格
+function renderAchHome(){
+  achSet=loadAch();
+  const grid=$("achGrid"); if(!grid) return;
+  grid.innerHTML="";
+  ACHS.forEach(a=>{
+    const got=achSet.has(a.id);
+    const d=document.createElement("div");
+    d.className="achitem"+(got?" got":"");
+    d.innerHTML=`<span class="acon">${got?"★":"?"}</span><span class="atext"><span class="aname">${got?a.name:"？？？"}</span><span class="adesc">${a.desc}</span></span>`;
+    grid.appendChild(d);
+  });
+  const c=$("achCount"); if(c) c.textContent=`（${achSet.size} / ${ACHS.length}）`;
+}
+
+// 開場顯示最高紀錄 + 成就
+(function(){
+  const best=loadBest();
+  const el=$("bestLine");
+  if(el) el.textContent = best?`最高紀錄：${fmt(best.score)} 分（${best.title}・第 ${best.day} 天）`:"還沒有紀錄——當第一個傳奇吧！";
+  renderAchHome();
+})();
+</script>
+</body>
+</html>
